@@ -31,8 +31,9 @@ jobs:
       # Installs exactly what package-lock.json says, and fails if the lock file is out of date.
       - run: npm ci
 
+      # oxlint exits 0 on warnings, so without --deny-warnings a warning-level finding would leave CI green.
       - name: Lint (oxlint)
-        run: npm run lint
+        run: npm run lint -- --deny-warnings
 
       - name: Typecheck
         run: npx tsc -b
