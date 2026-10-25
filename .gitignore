@@ -1,0 +1,31 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# .env.development and .env.production ARE committed on purpose: they hold only the public API address.
+# Anything else named .env* stays out. Never put a secret in a VITE_ variable: it ships to every browser.
+.env
+.env.*
+!.env.development
+!.env.production
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
