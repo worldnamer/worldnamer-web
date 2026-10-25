@@ -8,6 +8,11 @@ export function startTelemetry() {
   const apiKey = import.meta.env.VITE_HONEYCOMB_API_KEY
   if (!apiKey) return
 
+  // The fetch instrumentation compares a string entry with ===, so the bare origin would never equal a full request
+  // URL like https://api.example.com/api/v1/health. A RegExp anchored on the origin matches every path.
+  const apiOrigin = new URL(import.meta.env.VITE_API_URL).origin
+  const apiUrlPattern = new RegExp(`^${apiOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+
   new HoneycombWebSDK({
     apiKey,
     serviceName: 'worldnamer-web',
@@ -16,7 +21,7 @@ export function startTelemetry() {
         '@opentelemetry/instrumentation-document-load': {},
         '@opentelemetry/instrumentation-fetch': {
           // Without this the browser would not add traceparent to calls to another origin (the API).
-          propagateTraceHeaderCorsUrls: [import.meta.env.VITE_API_URL],
+          propagateTraceHeaderCorsUrls: [apiUrlPattern],
         },
         // Every click and every XHR would become its own span; not needed yet, and it burns event quota.
         '@opentelemetry/instrumentation-user-interaction': { enabled: false },
