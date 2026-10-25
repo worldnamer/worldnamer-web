@@ -1,9 +1,13 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  // '@/...' means 'src/...' (shadcn/ui's convention; tsconfig.app.json has the matching paths entry).
+  resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
