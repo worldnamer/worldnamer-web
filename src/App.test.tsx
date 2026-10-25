@@ -1,21 +1,24 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import App from './App'
 import { server } from './mocks/server'
 
 const healthUrl = 'http://api.test/api/v1/health'
 
-function renderApp() {
+function renderApp(route = '/') {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <App />
+      <MemoryRouter initialEntries={[route]}>
+        <App />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
 
-describe('App', () => {
+describe('home page', () => {
   it('shows OK when the API answers 200', async () => {
     server.use(http.get(healthUrl, () => HttpResponse.json({ status: 'ok', db: 'ok' })))
 
@@ -40,5 +43,29 @@ describe('App', () => {
     renderApp()
 
     expect(await screen.findByText(/FAILED/)).toBeInTheDocument()
+  })
+})
+
+describe('navigation', () => {
+  it('goes to the resume page from the nav', async () => {
+    server.use(http.get(healthUrl, () => HttpResponse.json({ status: 'ok', db: 'ok' })))
+    renderApp()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Resume' }))
+
+    expect(await screen.findByRole('heading', { name: 'John LeBoeuf-Little' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Resume' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shows the resume page when opened directly', () => {
+    renderApp('/resume')
+
+    expect(screen.getByRole('heading', { name: 'John LeBoeuf-Little' })).toBeInTheDocument()
+  })
+
+  it('shows a not-found page for an unknown address', () => {
+    renderApp('/nope')
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
   })
 })
