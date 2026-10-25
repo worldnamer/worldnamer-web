@@ -1,0 +1,44 @@
+name: CI
+
+# The same checks as `npm run lint`, `tsc -b`, `npm test` and `npm run build` on a laptop. Vercel builds the site on
+# every push to main but does not run lint or tests, so this is where those get checked.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an older, still-running run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node version comes from .nvmrc; downloaded packages are cached between runs.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Installs exactly what package-lock.json says, and fails if the lock file is out of date.
+      - run: npm ci
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Production build
+        run: npm run build
