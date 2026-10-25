@@ -5,9 +5,16 @@ import './index.css'
 import App from './App.tsx'
 import { reactRootOptions, startSentry } from './sentry.ts'
 import { startTelemetry } from './telemetry.ts'
+import { inject } from '@vercel/analytics'
 
 startSentry()
 startTelemetry()
+
+// Vercel Web Analytics (page views and visitors; no cookies). Only in a production build, so local development and
+// tests send nothing and load nothing. It is enabled per project in the Vercel dashboard.
+if (import.meta.env.PROD) {
+  inject()
+}
 
 const queryClient = new QueryClient()
 
