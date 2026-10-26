@@ -1,18 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
-import { fetchHealth } from './api/health'
+import { Route, Routes } from 'react-router'
 import { Layout } from './components/Layout'
+import { Home } from './pages/Home'
+import { NotFound } from './pages/NotFound'
+import { Resume } from './pages/Resume'
 
 function App() {
-  // retry: false so a down API shows as failed right away instead of after several automatic retries.
-  const health = useQuery({ queryKey: ['health'], queryFn: fetchHealth, retry: false })
-
   return (
     <Layout>
-      <p role="status">
-        API: {health.isPending && 'checking…'}
-        {health.isSuccess && 'OK'}
-        {health.isError && `FAILED (${health.error.message})`}
-      </p>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/resume" element={<Resume />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </Layout>
   )
 }
