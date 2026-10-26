@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 const navLinks = [
   { label: 'Home', to: '/' },
-  { label: 'Resume', to: '/resume' },
+  { label: 'Résumé', to: '/resume' },
 ]
 
 export function Header() {

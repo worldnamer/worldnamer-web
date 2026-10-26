@@ -13,8 +13,14 @@
   --foreground: #bbbbbb;
   --muted-foreground: #8b98a5;
   --border: #1f2933;
+  /* Raised surfaces such as the résumé panels: a step lighter than --background. */
+  --panel: #10151c;
   /* The highlight color (the "w" in the wordmark). Not called "accent": shadcn/ui uses that name for subtle hover backgrounds. */
   --brand: #06b6d4;
+  /* Badges for non-technical skills (leadership, architecture) on the résumé. */
+  --skill: #10b981;
+  /* Badges for concepts that are not a specific technology (REST, NoSQL). A cool silver, a bit dimmer than the body text. */
+  --concept: #a2aab4;
 }
 
 @theme inline {
@@ -22,7 +28,10 @@
   --color-foreground: var(--foreground);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-panel: var(--panel);
   --color-brand: var(--brand);
+  --color-skill: var(--skill);
+  --color-concept: var(--concept);
   --font-sans: 'Inter Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Play', 'Inter Variable', system-ui, sans-serif;
 }
