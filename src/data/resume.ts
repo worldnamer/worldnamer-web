@@ -37,6 +37,8 @@ export type TimelineEvent =
 export const resume = {
   name: 'John LeBoeuf-Little',
   headline: 'Senior Software Engineer / Engineering Manager / SRE',
+  // Also the footer tagline and the last line of the summary; the landing page dossier shows it as MISSION.
+  mission: 'I use tech to empower people.',
   contact: {
     email: 'worldnamer@gmail.com',
     linkedin: 'https://linkedin.com/in/worldnamer',

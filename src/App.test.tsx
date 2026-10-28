@@ -1,12 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { server } from './mocks/server'
-
-const healthUrl = 'http://api.test/api/v1/health'
 
 function renderApp(route = '/') {
   render(
@@ -19,36 +15,15 @@ function renderApp(route = '/') {
 }
 
 describe('home page', () => {
-  it('shows OK when the API answers 200', async () => {
-    server.use(http.get(healthUrl, () => HttpResponse.json({ status: 'ok', db: 'ok' })))
-
+  it('shows the dossier', () => {
     renderApp()
 
-    expect(await screen.findByText(/API: OK/)).toBeInTheDocument()
-  })
-
-  it('shows the HTTP status when the API answers 503', async () => {
-    server.use(
-      http.get(healthUrl, () => HttpResponse.json({ status: 'error', db: 'unreachable' }, { status: 503 })),
-    )
-
-    renderApp()
-
-    expect(await screen.findByText(/FAILED \(HTTP 503\)/)).toBeInTheDocument()
-  })
-
-  it('shows a failure when the API cannot be reached at all', async () => {
-    server.use(http.get(healthUrl, () => HttpResponse.error()))
-
-    renderApp()
-
-    expect(await screen.findByText(/FAILED/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'About John' })).toBeInTheDocument()
   })
 })
 
 describe('navigation', () => {
   it('goes to the resume page from the nav', async () => {
-    server.use(http.get(healthUrl, () => HttpResponse.json({ status: 'ok', db: 'ok' })))
     renderApp()
 
     fireEvent.click(screen.getByRole('link', { name: 'Résumé' }))
