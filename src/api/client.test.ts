@@ -20,13 +20,17 @@
 //     - network error: resolves null, leaves the flag alone (so the next page load tries again).
 import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HAS_SESSION_KEY, hasSessionFlag, setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken, getAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, REFRESH_TOKEN, refreshHandler, tokenBody } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { apiFetch, refreshSession } from './client'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 beforeEach(() => {
   clearAccessToken()
@@ -172,15 +176,14 @@ describe('refreshSession', () => {
   })
 
   it('sends the request with credentials: include', async () => {
-    let credentials: string | undefined
-    server.use(
-      http.post(`${API_BASE}/session/refresh`, ({ request }) => {
-        credentials = request.credentials
-        return HttpResponse.json(tokenBody(REFRESH_TOKEN))
-      }),
-    )
+    // MSW under Node always reports request.credentials as 'same-origin', so assert on what is passed to fetch itself.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    server.use(http.post(`${API_BASE}/session/refresh`, () => HttpResponse.json(tokenBody(REFRESH_TOKEN))))
     await refreshSession()
-    expect(credentials).toBe('include')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/session/refresh'),
+      expect.objectContaining({ credentials: 'include' }),
+    )
   })
 
   it('shares one request between concurrent callers, and starts a new one after it settles', async () => {

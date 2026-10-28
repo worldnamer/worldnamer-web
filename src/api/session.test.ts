@@ -12,7 +12,7 @@
 //     clearAccessToken(), clearSessionFlag(), queryClient.clear() (drops private data), then
 //     queryClient.setQueryData(['session'], null). Resolves (never rejects).
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HAS_SESSION_KEY, hasSessionFlag, setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken, getAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
@@ -30,6 +30,10 @@ import {
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
 import { login, logout, restoreSession } from './session'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 beforeEach(() => {
   clearAccessToken()
@@ -74,15 +78,15 @@ describe('restoreSession', () => {
 
 describe('login', () => {
   it('sends a POST with a JSON body, credentials: include, and no password in the URL', async () => {
-    let captured: { method: string; url: string; contentType: string | null; credentials: string; body: unknown } | null =
-      null
+    let captured: { method: string; url: string; contentType: string | null; body: unknown } | null = null
+    // MSW under Node always reports request.credentials as 'same-origin', so assert on what is passed to fetch itself.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
     server.use(
       http.post(`${API_BASE}/session`, async ({ request }) => {
         captured = {
           method: request.method,
           url: request.url,
           contentType: request.headers.get('Content-Type'),
-          credentials: request.credentials,
           body: await request.json(),
         }
         return HttpResponse.json(tokenBody(LOGIN_TOKEN))
@@ -93,7 +97,10 @@ describe('login', () => {
     const seen = captured!
     expect(seen.method).toBe('POST')
     expect(seen.contentType).toContain('application/json')
-    expect(seen.credentials).toBe('include')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/session'),
+      expect.objectContaining({ credentials: 'include' }),
+    )
     expect(seen.body).toEqual({ username: VALID_USERNAME, password: VALID_PASSWORD })
     expect(seen.url).toBe(`${API_BASE}/session`)
     expect(seen.url).not.toContain(VALID_PASSWORD)
@@ -170,16 +177,22 @@ describe('logout', () => {
   }
 
   it('calls DELETE /session with credentials: include and clears everything', async () => {
-    let seen: { method: string; credentials: string } | null = null
+    let method: string | undefined
+    // MSW under Node always reports request.credentials as 'same-origin', so assert on what is passed to fetch itself.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
     server.use(
       http.delete(`${API_BASE}/session`, ({ request }) => {
-        seen = { method: request.method, credentials: request.credentials }
+        method = request.method
         return new HttpResponse(null, { status: 204 })
       }),
     )
     loggedIn()
     await logout()
-    expect(seen).toEqual({ method: 'DELETE', credentials: 'include' })
+    expect(method).toBe('DELETE')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/session'),
+      expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+    )
     expectLoggedOut()
   })
 
