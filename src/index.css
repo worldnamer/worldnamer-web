@@ -39,8 +39,10 @@
 }
 
 /* The landing page dossier (src/components/Dossier.tsx). Each line carries --delay, --dur and --len (characters).
-   From md up, a short line "types" by growing its width in one step per character, which needs the monospace font
-   and a single unwrapped line. Long lines, and everything on a phone, fade in instead. Until its delay passes, a
+   From md up, a short line "types" by uncovering itself from the left in one step per character, which needs the
+   monospace font and a single unwrapped line. It is revealed with clip-path, whose percentages are of the line's own
+   rendered width; an earlier version grew `width` to `length * 1ch`, and when the font loaded late or the sum was a
+   fraction of a pixel short, the last letter was clipped (an O looked like a C). Long lines, and everything on a phone, fade in instead. Until its delay passes, a
    line holds its starting keyframe (animation-fill-mode: both), so it is hidden, not just unanimated. */
 .dossier-fade {
   animation: dossier-fade var(--dur) ease-out var(--delay) both;
@@ -53,10 +55,7 @@
 @media (min-width: 768px) {
   .dossier-typed {
     display: inline-block;
-    max-width: 100%;
-    overflow: hidden;
     white-space: nowrap;
-    vertical-align: bottom;
     animation: dossier-type var(--dur) steps(var(--len), end) var(--delay) both;
   }
 }
@@ -65,12 +64,13 @@
   animation: dossier-blink 1s steps(1) infinite;
 }
 
+/* The negative insets leave room for glyphs and underlines that stick out of the line box. */
 @keyframes dossier-type {
   from {
-    width: 0;
+    clip-path: inset(-0.3em 100% -0.3em -0.3em);
   }
   to {
-    width: calc(var(--len) * 1ch);
+    clip-path: inset(-0.3em -0.3em -0.3em -0.3em);
   }
 }
 
