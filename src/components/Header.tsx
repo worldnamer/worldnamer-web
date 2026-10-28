@@ -2,7 +2,6 @@ import { Link, NavLink } from 'react-router'
 import { cn } from '@/lib/utils'
 
 const navLinks = [
-  { label: 'Home', to: '/' },
   { label: 'Résumé', to: '/resume' },
 ]
 
@@ -19,7 +18,6 @@ export function Header() {
             <NavLink
               key={link.to}
               to={link.to}
-              end
               className={({ isActive }) =>
                 cn('transition-colors hover:text-foreground', isActive ? 'text-foreground' : 'text-muted-foreground')
               }

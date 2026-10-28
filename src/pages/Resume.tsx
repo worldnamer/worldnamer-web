@@ -11,7 +11,15 @@ export function Resume() {
     <div className="space-y-12">
       <header className="mx-auto max-w-3xl">
         <h1 className="font-display text-center text-4xl font-bold">{name}</h1>
-        <p className="text-muted-foreground mt-1 text-center">{headline}</p>
+        {/* One line with slashes from 640px up; one role per line, no slashes, on a phone. */}
+        <p className="text-muted-foreground mt-1 text-center">
+          {headline.split(' / ').map((role, i) => (
+            <span key={role} className="block sm:inline">
+              {i > 0 && <span className="hidden sm:inline"> / </span>}
+              {role}
+            </span>
+          ))}
+        </p>
         <div className="mt-6 space-y-3 border-t pt-5 text-justify hyphens-auto">
           {summary.map((paragraph) => (
             <p key={paragraph}>

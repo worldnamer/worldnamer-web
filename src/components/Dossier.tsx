@@ -77,8 +77,8 @@ const eofDelay = last.delay + last.duration
 export function Dossier() {
   return (
     <section aria-label="About John" className="font-mono pl-5 text-sm sm:text-base">
-      <p className="text-muted-foreground mb-4 tracking-widest">// DOSSIER · URGENT</p>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2.5 sm:gap-x-8">
+      <p className="text-muted-foreground mb-3 tracking-widest sm:mb-4">// DOSSIER · URGENT</p>
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 sm:gap-x-8 sm:gap-y-2.5">
         {lines.map((line, i) => {
           const { delay, duration, length } = timings[i]
           return (
@@ -104,7 +104,7 @@ export function Dossier() {
       </dl>
       <p
         aria-hidden="true"
-        className="dossier-fade text-brand mt-4"
+        className="dossier-fade text-brand mt-3 sm:mt-4"
         style={{ '--delay': `${eofDelay}ms`, '--dur': '300ms' } as React.CSSProperties}
       >
         {'<EOF>'} <span className="dossier-cursor">▌</span>
