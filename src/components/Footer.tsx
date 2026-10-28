@@ -9,10 +9,12 @@ const year = new Date().getFullYear()
 export function Footer() {
   return (
     <footer className="border-t">
-      <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:py-4 sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-baseline gap-x-4">
           <p className="font-display text-base text-foreground">I use tech to empower people.</p>
-          <p className="text-muted-foreground text-sm">© {year} John LeBoeuf-Little</p>
+          <p className="text-muted-foreground text-xs sm:text-sm">
+            © {year}<span className="hidden sm:inline"> John LeBoeuf-Little</span>
+          </p>
         </div>
         <nav aria-label="Elsewhere" className="flex gap-6 text-sm">
           {links.map((link) => (
