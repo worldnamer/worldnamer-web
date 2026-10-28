@@ -2,6 +2,7 @@
 @import '@fontsource-variable/inter';
 @import '@fontsource/play/400.css';
 @import '@fontsource/play/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
 
 /* The site is dark only (<html class="dark"> in index.html). These are shadcn/ui's theme variables; components
    reference them by name (bg-background, text-muted-foreground, ...), so retheme here, not in each component. */
@@ -34,6 +35,66 @@
   --color-concept: var(--concept);
   --font-sans: 'Inter Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Play', 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+}
+
+/* The landing page dossier (src/components/Dossier.tsx). Each line carries --delay, --dur and --len (characters).
+   From md up, a short line "types" by growing its width in one step per character, which needs the monospace font
+   and a single unwrapped line. Long lines, and everything on a phone, fade in instead. Until its delay passes, a
+   line holds its starting keyframe (animation-fill-mode: both), so it is hidden, not just unanimated. */
+.dossier-fade {
+  animation: dossier-fade var(--dur) ease-out var(--delay) both;
+}
+
+.dossier-typed {
+  animation: dossier-fade var(--dur) ease-out var(--delay) both;
+}
+
+@media (min-width: 768px) {
+  .dossier-typed {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
+    animation: dossier-type var(--dur) steps(var(--len), end) var(--delay) both;
+  }
+}
+
+.dossier-cursor {
+  animation: dossier-blink 1s steps(1) infinite;
+}
+
+@keyframes dossier-type {
+  from {
+    width: 0;
+  }
+  to {
+    width: calc(var(--len) * 1ch);
+  }
+}
+
+@keyframes dossier-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dossier-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dossier-fade,
+  .dossier-typed,
+  .dossier-cursor {
+    animation: none;
+  }
 }
 
 @layer base {
