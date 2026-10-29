@@ -91,5 +91,14 @@ export function habitsHandlers(initial: MockHabit[] = []) {
     return HttpResponse.json({ habit }, { status: 201 })
   })
 
-  return [list, create]
+  // 204 for a habit in the list, 404 for anything else (like the API does for a missing or someone else's habit).
+  const remove = http.delete(`${API_BASE}/habits/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = habits.findIndex((h) => String(h.id) === params.id)
+    if (index === -1) return HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })
+    habits.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, remove]
 }
