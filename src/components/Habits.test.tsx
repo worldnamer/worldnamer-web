@@ -1,4 +1,4 @@
-// Habit list (web scenarios 1, 2 and 4). The component is rendered alone with the real queryClient and a mock token.
+// The habit list. The component is rendered alone with the real queryClient and a mock token.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -9,6 +9,12 @@ import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, habitsHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { Habits } from './Habits'
+
+// The habit names, read from the row headers of the table, in display order.
+const names = () => screen.queryAllByRole('rowheader').map((cell) => cell.textContent)
+
+// The rows of the table body (the header row is left out), including the draft row when it is open.
+const bodyRows = () => within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row')
 
 function renderHabits() {
   return render(
@@ -35,8 +41,9 @@ describe('Habits', () => {
     renderHabits()
 
     const region = screen.getByRole('region', { name: 'Habits' })
-    const items = await within(region).findAllByRole('listitem')
-    expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual(['Drink water', 'Stretch'])
+    const headers = await within(region).findAllByRole('rowheader')
+    expect(headers.map((header) => header.textContent)).toEqual(['Drink water', 'Stretch'])
+    expect(within(region).getByRole('table')).toBeInTheDocument()
   })
 
   it('shows a loading message until the list arrives', async () => {
@@ -53,7 +60,7 @@ describe('Habits', () => {
     renderHabits()
 
     expect(await screen.findByText('No habits yet.')).toBeInTheDocument()
-    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it.each([
@@ -69,11 +76,6 @@ describe('Habits', () => {
 })
 
 describe('adding a habit', () => {
-  const names = () =>
-    screen
-      .getAllByRole('listitem')
-      .map((item) => item.querySelector('span')?.textContent)
-      .filter(Boolean)
   const plus = () => screen.getByRole('button', { name: 'Add habit' })
   const draft = () => screen.queryByRole('textbox', { name: 'New habit' })
 
@@ -99,9 +101,9 @@ describe('adding a habit', () => {
 
     await user.click(plus())
 
-    const items = screen.getAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    expect(within(items[1]).getByRole('textbox', { name: 'New habit' })).toHaveFocus()
+    const rows = bodyRows()
+    expect(rows).toHaveLength(2)
+    expect(within(rows[1]).getByRole('textbox', { name: 'New habit' })).toHaveFocus()
     expect(draft()).toHaveValue('')
     expect(plus()).toBeDisabled()
   })
@@ -307,7 +309,6 @@ describe('adding a habit', () => {
 })
 
 describe('deleting a habit', () => {
-  const names = () => screen.getAllByRole('listitem').map((item) => item.querySelector('span')?.textContent)
   const stretch = [
     { id: 1, name: 'Drink water' },
     { id: 2, name: 'Stretch' },
