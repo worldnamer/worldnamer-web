@@ -238,6 +238,9 @@ export function Habits() {
     // While another week loads, keep the last week's rows on screen, so the layout does not jump. isPlaceholderData is
     // true meanwhile, and the boxes are disabled, so nothing can be ticked under the wrong dates.
     placeholderData: keepPreviousData,
+    // A week fetched in the last minute counts as fresh: going back to it, or tabbing back to the page, sends no
+    // request. Our own ticks, adds and deletes still invalidate it. A change from another device shows up within a minute.
+    staleTime: 60_000,
   })
   const days = weekDays(weekStart)
   const range = formatWeekRange(weekStart, Number(todayIso.slice(0, 4)))

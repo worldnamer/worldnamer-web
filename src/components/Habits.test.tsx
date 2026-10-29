@@ -932,6 +932,21 @@ describe('moving between weeks', () => {
     expect(screen.getByText('Nov 2 – Nov 8')).toBeInTheDocument()
   })
 
+  it('does not ask again for a week it fetched moments ago when going back to it', async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    const weeks = recordWeekStarts()
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+
+    await user.click(next())
+    await tableNamed('Nov 2 – Nov 8')
+    await user.click(previous())
+
+    await tableNamed('Oct 26 – Nov 1')
+    expect(weeks).toEqual(['2026-10-26', '2026-11-02'])
+  })
+
   it('reaches Oct 19 – Oct 25 with Previous twice, using the keyboard', async () => {
     const user = userEvent.setup()
     server.use(...habitsHandlers([stretch]))
