@@ -50,7 +50,8 @@ export const sessionHandlers = [loginHandler, refreshHandler, logoutHandler, meH
 
 // The habit list (specs/habit-list.md). habitsHandlers(initial) keeps one in-memory list that its handlers share, so a
 // POST shows up in the next GET. Like the session handlers it is opt-in: server.use(...habitsHandlers([...])).
-export type MockHabit = { id: number; name: string }
+// completed_dates holds every date ticked for the habit, in any week; GET returns only the requested week's.
+export type MockHabit = { id: number; name: string; completed_dates?: string[] }
 
 const unauthenticated = () =>
   HttpResponse.json(errorBody('unauthenticated', 'Unauthenticated.'), { status: 401 })
@@ -61,12 +62,38 @@ function hasMockToken(request: Request) {
   return auth === `Bearer ${REFRESH_TOKEN}` || auth === `Bearer ${LOGIN_TOKEN}`
 }
 
-export function habitsHandlers(initial: MockHabit[] = []) {
-  const habits = [...initial]
+// The seven dates of the week that starts on `value`, or null unless `value` is a real Monday written YYYY-MM-DD.
+// Written apart from src/lib/week.ts on purpose, so a mistake there cannot hide behind the same mistake here.
+function mockWeek(value: string | null): string[] | null {
+  if (value === null || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [y, m, d] = value.split('-').map(Number)
+  const monday = new Date(y, m - 1, d)
+  const real = monday.getFullYear() === y && monday.getMonth() === m - 1 && monday.getDate() === d
+  if (!real || monday.getDay() !== 1) return null
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(y, m - 1, d + i)
+    return [day.getFullYear(), day.getMonth() + 1, day.getDate()].map((n) => String(n).padStart(2, '0')).join('-')
+  })
+}
 
+export function habitsHandlers(initial: MockHabit[] = []) {
+  const habits = initial.map((h) => ({ id: h.id, name: h.name, completed_dates: [...(h.completed_dates ?? [])] }))
+
+  // Requires week_start, as the API will once the old web is retired, so the tests prove the web always sends it.
   const list = http.get(`${API_BASE}/habits`, ({ request }) => {
     if (!hasMockToken(request)) return unauthenticated()
-    return HttpResponse.json({ habits })
+    const week = mockWeek(new URL(request.url).searchParams.get('week_start'))
+    if (week === null) {
+      const message = 'week_start must be a Monday in the form YYYY-MM-DD.'
+      return HttpResponse.json(errorBody('bad_request', message), { status: 400 })
+    }
+    return HttpResponse.json({
+      habits: habits.map((h) => ({
+        id: h.id,
+        name: h.name,
+        completed_dates: h.completed_dates.filter((date) => week.includes(date)).sort(),
+      })),
+    })
   })
 
   let nextId = Math.max(0, ...habits.map((h) => h.id)) + 1
@@ -87,7 +114,7 @@ export function habitsHandlers(initial: MockHabit[] = []) {
       return HttpResponse.json(errorBody('validation_failed', message), { status: 422 })
     }
     const habit = { id: nextId++, name }
-    habits.push(habit)
+    habits.push({ ...habit, completed_dates: [] })
     return HttpResponse.json({ habit }, { status: 201 })
   })
 

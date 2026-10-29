@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ApiError } from '@/api/client'
-import { createHabit, deleteHabit, listHabits, type Habit } from '@/api/habits'
+import { createHabit, deleteHabit, listHabits, type Habit, type HabitWeek } from '@/api/habits'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +14,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { currentWeekStart, formatDayHeader, formatDayLabel, formatWeekRange, today, weekDays } from '@/lib/week'
+
+// The habit name, seven days and the Delete button.
+const columnCount = 9
+
+// A subtle background on today's column, from the theme's muted surface colour.
+const todayClass = 'bg-accent/40'
 
 const inputClass =
   'h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
@@ -37,8 +45,10 @@ function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
   const add = useMutation({
     mutationFn: createHabit,
     onSuccess: (habit) => {
-      // Append the new habit to the cached list, so no refetch is needed.
-      queryClient.setQueryData<Habit[]>(['habits'], (old) => [...(old ?? []), habit])
+      // Append the new habit, with nothing ticked, to every cached week, so no refetch is needed.
+      queryClient.setQueriesData<HabitWeek[]>({ queryKey: ['habits'] }, (old) =>
+        old ? [...old, { ...habit, completed_dates: [] }] : old,
+      )
       onClose(true)
     },
     onError: (e) => {
@@ -78,7 +88,7 @@ function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
 
   return (
     <tr>
-      <td colSpan={2} className="py-1">
+      <td colSpan={columnCount} className="py-1">
         <div className="grid gap-1">
           <input
             ref={inputRef}
@@ -105,14 +115,21 @@ function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
   )
 }
 
-// The logged-in user's habit list. The ['habits'] query is cached by TanStack Query; logout clears the cache.
+// The logged-in user's habits as a grid: a row per habit and a column per day of one week, Monday to Sunday. Each
+// week is its own ['habits', weekStart] query, cached by TanStack Query; logout clears the cache.
 export function Habits() {
   const queryClient = useQueryClient()
+  // Today and its week are read from the clock once, when the grid mounts (reading it during render is impure). A tab
+  // left open past midnight keeps showing the day it opened on until it is reloaded.
+  const [todayIso] = useState(today)
+  const [weekStart] = useState(currentWeekStart)
   const { data, isPending, isError } = useQuery({
-    queryKey: ['habits'],
-    queryFn: listHabits,
+    queryKey: ['habits', weekStart],
+    queryFn: () => listHabits(weekStart),
     retry: false, // a down API should show the error at once, not after several retries
   })
+  const days = weekDays(weekStart)
+  const range = formatWeekRange(weekStart, Number(todayIso.slice(0, 4)))
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
@@ -132,7 +149,7 @@ export function Habits() {
       setDeletingIds((ids) => [...ids, habit.id])
     },
     onSuccess: (_result, habit) => {
-      queryClient.setQueryData<Habit[]>(['habits'], (old) => old?.filter((h) => h.id !== habit.id))
+      queryClient.setQueriesData<HabitWeek[]>({ queryKey: ['habits'] }, (old) => old?.filter((h) => h.id !== habit.id))
       // Refetch too, so a 404 (already deleted elsewhere) or a change from another tab shows up.
       void queryClient.invalidateQueries({ queryKey: ['habits'] })
     },
@@ -162,20 +179,25 @@ export function Habits() {
 
   return (
     <section aria-labelledby="habits-heading" className="w-full lg:w-1/2">
-      <div className="flex items-center justify-between border-b border-border pb-2">
+      <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
         <h2 id="habits-heading" className="font-display text-xl tracking-wide">
           Habits
         </h2>
-        <Button
-          ref={plusRef}
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Add habit"
-          disabled={drafting}
-          onClick={() => setDrafting(true)}
-        >
-          <PlusIcon />
-        </Button>
+        <div className="flex items-center gap-2">
+          <span id="habits-range" className="text-sm text-muted-foreground">
+            {range}
+          </span>
+          <Button
+            ref={plusRef}
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Add habit"
+            disabled={drafting}
+            onClick={() => setDrafting(true)}
+          >
+            <PlusIcon />
+          </Button>
+        </div>
       </div>
       <div className="grid gap-2 border-b border-border py-2">
         {isPending && <p className="text-muted-foreground">Loading habits...</p>}
@@ -186,12 +208,27 @@ export function Habits() {
         )}
         {data && data.length === 0 && !drafting && <p className="text-muted-foreground">No habits yet.</p>}
         {data && (data.length > 0 || drafting) && (
-          <table aria-labelledby="habits-heading" className="w-full border-collapse">
+          // Named by the heading and the range, so a screen reader announces "Habits Oct 26 – Nov 1".
+          <table aria-labelledby="habits-heading habits-range" className="w-full border-collapse">
             <thead>
               <tr>
-                <th scope="col" className="sr-only">
-                  Habit
+                {/* sr-only goes on the text, not the cell: a cell taken out of the layout would shift the columns. */}
+                <th scope="col">
+                  <span className="sr-only">Habit</span>
                 </th>
+                {days.map((day) => (
+                  <th
+                    key={day}
+                    scope="col"
+                    aria-current={day === todayIso ? 'date' : undefined}
+                    className={cn(
+                      'w-9 py-1 text-center text-xs font-normal text-muted-foreground',
+                      day === todayIso && todayClass,
+                    )}
+                  >
+                    {formatDayHeader(day)}
+                  </th>
+                ))}
                 <td />
               </tr>
             </thead>
@@ -201,6 +238,17 @@ export function Habits() {
                   <th scope="row" className="py-1 text-left font-normal">
                     {habit.name}
                   </th>
+                  {days.map((day) => (
+                    <td key={day} className={cn('py-1 text-center', day === todayIso && todayClass)}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${habit.name}, ${formatDayLabel(day)}`}
+                        className="size-4 align-middle accent-brand"
+                        checked={habit.completed_dates.includes(day)}
+                        readOnly
+                      />
+                    </td>
+                  ))}
                   <td className="py-1 text-right">
                     <Button
                       variant="ghost"

@@ -1,14 +1,40 @@
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, errorBody, REFRESH_TOKEN } from '@/mocks/handlers'
+import { API_BASE, errorBody, habitsHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createHabit, deleteHabit } from './habits'
+import { createHabit, deleteHabit, listHabits } from './habits'
 
 beforeEach(() => {
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
+})
+
+describe('listHabits', () => {
+  it("sends week_start and resolves each habit with that week's completed dates", async () => {
+    let query: string | null = null
+    server.use(
+      http.get(`${API_BASE}/habits`, ({ request }) => {
+        query = new URL(request.url).search
+      }),
+      ...habitsHandlers([{ id: 7, name: 'Stretch', completed_dates: ['2026-10-25', '2026-10-28', '2026-11-02'] }]),
+    )
+    await expect(listHabits('2026-10-26')).resolves.toEqual([
+      { id: 7, name: 'Stretch', completed_dates: ['2026-10-28'] },
+    ])
+    expect(query).toBe('?week_start=2026-10-26')
+  })
+
+  it('treats a habit without completed_dates as having none', async () => {
+    server.use(http.get(`${API_BASE}/habits`, () => HttpResponse.json({ habits: [{ id: 7, name: 'Stretch' }] })))
+    await expect(listHabits('2026-10-26')).resolves.toEqual([{ id: 7, name: 'Stretch', completed_dates: [] }])
+  })
+
+  it('rejects with an ApiError when the mock refuses a week_start that is not a Monday', async () => {
+    server.use(...habitsHandlers([]))
+    await expect(listHabits('2026-10-27')).rejects.toMatchObject({ status: 400 })
+  })
 })
 
 describe('createHabit', () => {

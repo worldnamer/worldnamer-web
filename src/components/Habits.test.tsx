@@ -1,9 +1,11 @@
-// The habit list. The component is rendered alone with the real queryClient and a mock token.
+// The habit grid. The component is rendered alone with the real queryClient and a mock token. The clock is faked to
+// Thursday 2026-10-29 10:00 local time (the tests run in Los Angeles time) unless a test sets another time; only Date
+// is faked, so Testing Library's waiting and user-event keep their real timers.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken, clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, habitsHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
@@ -25,10 +27,36 @@ function renderHabits() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 9, 29, 10, 0))
   queryClient.clear()
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
 })
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+// Records the week_start of every GET /habits, then lets the shared handlers answer it.
+function recordWeekStarts() {
+  const weeks: (string | null)[] = []
+  server.use(
+    http.get(`${API_BASE}/habits`, ({ request }) => {
+      weeks.push(new URL(request.url).searchParams.get('week_start'))
+    }),
+  )
+  return weeks
+}
+
+const box = (name: string) => screen.getByRole('checkbox', { name })
+const checkedBoxes = () =>
+  screen
+    .queryAllByRole('checkbox')
+    .filter((input) => (input as HTMLInputElement).checked)
+    .map((input) => input.getAttribute('aria-label'))
+const columnHeaders = () => screen.getAllByRole('columnheader').map((header) => header.textContent)
+const todayClass = 'bg-accent/40'
 
 describe('Habits', () => {
   it('shows a region "Habits" with the names in API order', async () => {
@@ -429,5 +457,174 @@ describe('deleting a habit', () => {
     expect(names()).toEqual(['Drink water', 'Stretch'])
     expect(screen.getByRole('button', { name: 'Delete Stretch' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Add habit' })).toHaveFocus()
+  })
+})
+
+describe('the week grid', () => {
+  const stretch = {
+    id: 7,
+    name: 'Stretch',
+    // The Sunday before and the Monday after the week of Oct 26 must not show.
+    completed_dates: ['2026-10-25', '2026-10-26', '2026-10-28', '2026-11-02'],
+  }
+
+  it('opens on the current week: asks for week_start=2026-10-26 and shows "Oct 26 – Nov 1" with no year', async () => {
+    server.use(...habitsHandlers([stretch]))
+    const weeks = recordWeekStarts()
+    renderHabits()
+
+    expect(await screen.findByRole('table', { name: 'Habits Oct 26 – Nov 1' })).toBeInTheDocument()
+    expect(weeks).toEqual(['2026-10-26'])
+    expect(screen.getByText('Oct 26 – Nov 1')).toHaveClass('text-muted-foreground')
+  })
+
+  it('has a column per day, Monday to Sunday, with no dates in the headers', async () => {
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    expect(columnHeaders()).toEqual(['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+  })
+
+  it("checks the boxes for the week's completed dates and no others", async () => {
+    server.use(...habitsHandlers([{ id: 3, name: 'Drink water' }, stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    expect(checkedBoxes()).toEqual(['Stretch, Monday, October 26', 'Stretch, Wednesday, October 28'])
+    expect(screen.getAllByRole('checkbox')).toHaveLength(14)
+    expect(box('Stretch, Sunday, November 1')).not.toBeChecked()
+    expect(box('Drink water, Monday, October 26')).not.toBeChecked()
+  })
+
+  it('names each box by habit and full date, and the boxes are native checkboxes', async () => {
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    const row = bodyRows()[0]
+    const labels = within(row)
+      .getAllByRole('checkbox')
+      .map((input) => input.getAttribute('aria-label'))
+    expect(labels).toEqual([
+      'Stretch, Monday, October 26',
+      'Stretch, Tuesday, October 27',
+      'Stretch, Wednesday, October 28',
+      'Stretch, Thursday, October 29',
+      'Stretch, Friday, October 30',
+      'Stretch, Saturday, October 31',
+      'Stretch, Sunday, November 1',
+    ])
+    expect(box('Stretch, Monday, October 26')).toHaveAttribute('type', 'checkbox')
+  })
+
+  it('still shows the week of Oct 26 at 23:30 on Sunday, when it is already Monday in UTC', async () => {
+    vi.setSystemTime(new Date(2026, 10, 1, 23, 30))
+    server.use(...habitsHandlers([stretch]))
+    const weeks = recordWeekStarts()
+    renderHabits()
+
+    expect(await screen.findByRole('table', { name: 'Habits Oct 26 – Nov 1' })).toBeInTheDocument()
+    expect(weeks).toEqual(['2026-10-26'])
+  })
+
+  it('shows the week of Nov 2, with no ticks yet, just after midnight on Monday', async () => {
+    vi.setSystemTime(new Date(2026, 10, 2, 0, 5))
+    const fresh = { id: 7, name: 'Stretch', completed_dates: ['2026-10-26', '2026-10-28'] }
+    server.use(...habitsHandlers([fresh]))
+    const weeks = recordWeekStarts()
+    renderHabits()
+
+    expect(await screen.findByRole('table', { name: 'Habits Nov 2 – Nov 8' })).toBeInTheDocument()
+    expect(weeks).toEqual(['2026-11-02'])
+    expect(checkedBoxes()).toEqual([])
+  })
+
+  it('shows every box empty when the response has no completed_dates', async () => {
+    server.use(http.get(`${API_BASE}/habits`, () => HttpResponse.json({ habits: [{ id: 7, name: 'Stretch' }] })))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(7)
+    expect(checkedBoxes()).toEqual([])
+  })
+
+  it('shows "No habits yet." and still shows the range when there are no habits', async () => {
+    server.use(...habitsHandlers([]))
+    renderHabits()
+
+    expect(await screen.findByText('No habits yet.')).toBeInTheDocument()
+    expect(screen.getByText('Oct 26 – Nov 1')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it("marks today's column: the Thursday header is the current date and its cells are highlighted", async () => {
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers.filter((header) => header.hasAttribute('aria-current')).map((h) => h.textContent)).toEqual(['Thu'])
+    expect(screen.getByRole('columnheader', { name: 'Thu' })).toHaveAttribute('aria-current', 'date')
+    expect(screen.getByRole('columnheader', { name: 'Thu' })).toHaveClass(todayClass)
+    const highlighted = screen
+      .getAllByRole('checkbox')
+      .filter((input) => input.closest('td')?.classList.contains(todayClass))
+      .map((input) => input.getAttribute('aria-label'))
+    expect(highlighted).toEqual(['Stretch, Thursday, October 29'])
+    expect(headers.filter((header) => header.classList.contains(todayClass))).toHaveLength(1)
+  })
+
+  it('highlights the Monday column just after midnight on Monday', async () => {
+    vi.setSystemTime(new Date(2026, 10, 2, 0, 5))
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    expect(screen.getByRole('columnheader', { name: 'Mon' })).toHaveAttribute('aria-current', 'date')
+    expect(box('Stretch, Monday, November 2').closest('td')).toHaveClass(todayClass)
+    expect(box('Stretch, Tuesday, November 3').closest('td')).not.toHaveClass(todayClass)
+  })
+})
+
+describe('add and delete across cached weeks', () => {
+  const lastWeek = ['habits', '2026-10-19']
+
+  it('adds the new habit, with a row of empty boxes, to every cached week', async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([{ id: 1, name: 'Drink water', completed_dates: ['2026-10-27'] }]))
+    queryClient.setQueryData(lastWeek, [{ id: 1, name: 'Drink water', completed_dates: ['2026-10-20'] }])
+    renderHabits()
+    await screen.findByText('Drink water')
+
+    await user.click(screen.getByRole('button', { name: 'Add habit' }))
+    await user.type(screen.getByRole('textbox', { name: 'New habit' }), 'Stretch{Enter}')
+
+    await waitFor(() => expect(names()).toEqual(['Drink water', 'Stretch']))
+    const stretchBoxes = within(bodyRows()[1]).getAllByRole('checkbox')
+    expect(stretchBoxes).toHaveLength(7)
+    expect(stretchBoxes.filter((input) => (input as HTMLInputElement).checked)).toEqual([])
+    expect(queryClient.getQueryData(lastWeek)).toEqual([
+      { id: 1, name: 'Drink water', completed_dates: ['2026-10-20'] },
+      { id: 2, name: 'Stretch', completed_dates: [] },
+    ])
+  })
+
+  it('removes a deleted habit from every cached week', async () => {
+    const user = userEvent.setup()
+    const both = [
+      { id: 1, name: 'Drink water', completed_dates: [] },
+      { id: 2, name: 'Stretch', completed_dates: [] },
+    ]
+    server.use(...habitsHandlers(both))
+    queryClient.setQueryData(lastWeek, both)
+    renderHabits()
+
+    await user.click(await screen.findByRole('button', { name: 'Delete Stretch' }))
+    const dialog = await screen.findByRole('alertdialog', { name: "Delete 'Stretch'?" })
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+    expect(queryClient.getQueryData(lastWeek)).toEqual([{ id: 1, name: 'Drink water', completed_dates: [] }])
   })
 })
