@@ -36,7 +36,7 @@ describe('Habits', () => {
 
     const region = screen.getByRole('region', { name: 'Habits' })
     const items = await within(region).findAllByRole('listitem')
-    expect(items.map((item) => item.textContent)).toEqual(['Drink water', 'Stretch'])
+    expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual(['Drink water', 'Stretch'])
   })
 
   it('shows a loading message until the list arrives', async () => {
@@ -69,7 +69,7 @@ describe('Habits', () => {
 })
 
 describe('adding a habit', () => {
-  const names = () => screen.getAllByRole('listitem').map((item) => item.textContent)
+  const names = () => screen.getAllByRole('listitem').map((item) => item.querySelector('span')?.textContent)
 
   it('sends the name with the bearer token, appends the habit and clears the input', async () => {
     const user = userEvent.setup()
@@ -182,5 +182,130 @@ describe('adding a habit', () => {
     await screen.findByText('Stretch')
     expect(posts).toBe(1)
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+  })
+})
+
+describe('deleting a habit', () => {
+  const names = () => screen.getAllByRole('listitem').map((item) => item.querySelector('span')?.textContent)
+  const stretch = [
+    { id: 1, name: 'Drink water' },
+    { id: 2, name: 'Stretch' },
+  ]
+
+  async function openDialog(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Delete Stretch' }))
+    return screen.findByRole('alertdialog', { name: "Delete 'Stretch'?" })
+  }
+
+  it("asks first, with the title \"Delete 'Stretch'?\" and a description", async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers(stretch))
+    renderHabits()
+
+    const dialog = await openDialog(user)
+
+    expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('sends no request on Cancel, and the habit stays', async () => {
+    const user = userEvent.setup()
+    let deletes = 0
+    server.use(
+      http.delete(`${API_BASE}/habits/:id`, () => {
+        deletes += 1
+      }),
+      ...habitsHandlers(stretch),
+    )
+    renderHabits()
+
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deletes).toBe(0)
+    expect(names()).toEqual(['Drink water', 'Stretch'])
+    // Radix hands focus back on the next tick.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Stretch' })).toHaveFocus())
+  })
+
+  it('sends DELETE /habits/<id> on confirm, the habit disappears and focus goes to the add field', async () => {
+    const user = userEvent.setup()
+    const deleted: string[] = []
+    server.use(
+      http.delete(`${API_BASE}/habits/:id`, ({ request }) => {
+        deleted.push(`${new URL(request.url).pathname} ${request.headers.get('Authorization')}`)
+      }),
+      ...habitsHandlers(stretch),
+    )
+    renderHabits()
+
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+    expect(deleted).toEqual([`/api/v1/habits/2 Bearer ${REFRESH_TOKEN}`])
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('New habit')).toHaveFocus()
+  })
+
+  it('disables that row while the request runs', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    server.use(
+      http.delete(`${API_BASE}/habits/:id`, async () => {
+        await held
+      }),
+      ...habitsHandlers(stretch),
+    )
+    renderHabits()
+
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(screen.getByRole('button', { name: 'Delete Stretch' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Delete Drink water' })).toBeEnabled()
+    release()
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+  })
+
+  it('treats a 404 as success: the habit goes and the list is fetched again', async () => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+        // After the first load, the list the server returns no longer has Stretch (deleted in another tab).
+        if (gets > 1) return HttpResponse.json({ habits: [{ id: 1, name: 'Drink water' }] })
+      }),
+      http.delete(`${API_BASE}/habits/:id`, () =>
+        HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 }),
+      ),
+      ...habitsHandlers(stretch),
+    )
+    renderHabits()
+
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+    await waitFor(() => expect(gets).toBe(2))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows an error and keeps the habit after a 500', async () => {
+    const user = userEvent.setup()
+    server.use(http.delete(`${API_BASE}/habits/:id`, () => new HttpResponse(null, { status: 500 })), ...habitsHandlers(stretch))
+    renderHabits()
+
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't delete 'Stretch'. Try again.")
+    expect(names()).toEqual(['Drink water', 'Stretch'])
+    expect(screen.getByRole('button', { name: 'Delete Stretch' })).toBeEnabled()
+    expect(screen.getByLabelText('New habit')).toHaveFocus()
   })
 })

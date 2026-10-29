@@ -22,3 +22,9 @@ export async function createHabit(name: string): Promise<Habit> {
   const body = (await response.json()) as { habit: Habit }
   return body.habit
 }
+
+// DELETE /habits/:id. Resolves on 204 and also on 404: a habit that is already gone (another tab) is what was wanted.
+export async function deleteHabit(id: number): Promise<void> {
+  const response = await apiFetch(`/habits/${id}`, { method: 'DELETE' })
+  if (!response.ok && response.status !== 404) throw await apiErrorFrom(response)
+}

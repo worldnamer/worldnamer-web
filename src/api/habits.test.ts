@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createHabit } from './habits'
+import { createHabit, deleteHabit } from './habits'
 
 beforeEach(() => {
   clearAccessToken()
@@ -38,5 +38,17 @@ describe('createHabit', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).code).toBeUndefined()
     expect((error as ApiError).serverMessage).toBeUndefined()
+  })
+})
+
+describe('deleteHabit', () => {
+  it.each([204, 404])('resolves on %i', async (status) => {
+    server.use(http.delete(`${API_BASE}/habits/9`, () => new HttpResponse(null, { status })))
+    await expect(deleteHabit(9)).resolves.toBeUndefined()
+  })
+
+  it('rejects with an ApiError on a 500', async () => {
+    server.use(http.delete(`${API_BASE}/habits/9`, () => new HttpResponse(null, { status: 500 })))
+    await expect(deleteHabit(9)).rejects.toMatchObject({ status: 500 })
   })
 })
