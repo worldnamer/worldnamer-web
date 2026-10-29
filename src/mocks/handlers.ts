@@ -47,3 +47,27 @@ export const meHandler = http.get(`${API_BASE}/me`, ({ request }) => {
 })
 
 export const sessionHandlers = [loginHandler, refreshHandler, logoutHandler, meHandler]
+
+// The habit list (specs/habit-list.md). habitsHandlers(initial) keeps one in-memory list that its handlers share, so a
+// POST shows up in the next GET. Like the session handlers it is opt-in: server.use(...habitsHandlers([...])).
+export type MockHabit = { id: number; name: string }
+
+const unauthenticated = () =>
+  HttpResponse.json(errorBody('unauthenticated', 'Unauthenticated.'), { status: 401 })
+
+// True for the two tokens the session handlers hand out.
+function hasMockToken(request: Request) {
+  const auth = request.headers.get('Authorization')
+  return auth === `Bearer ${REFRESH_TOKEN}` || auth === `Bearer ${LOGIN_TOKEN}`
+}
+
+export function habitsHandlers(initial: MockHabit[] = []) {
+  const habits = [...initial]
+
+  const list = http.get(`${API_BASE}/habits`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ habits })
+  })
+
+  return [list]
+}

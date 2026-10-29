@@ -51,6 +51,7 @@ import {
   refreshHandler,
   tokenBody,
   errorBody,
+  habitsHandlers,
 } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
@@ -93,7 +94,7 @@ function gate() {
 // Logged in the way John is on a reload: flag set, refresh answers 200.
 async function renderLoggedIn(route = '/') {
   setSessionFlag()
-  server.use(refreshHandler, logoutHandler)
+  server.use(refreshHandler, logoutHandler, ...habitsHandlers())
   renderApp(route)
   return screen.findByRole('button', { name: 'Account menu' })
 }
@@ -115,6 +116,19 @@ async function fillAndSubmit(
 }
 
 describe('logged out', () => {
+  it('never asks for the habit list', async () => {
+    const requests: string[] = []
+    server.events.on('request:start', ({ request }) => requests.push(new URL(request.url).pathname))
+    renderApp()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    server.events.removeAllListeners()
+
+    expect(dossier()).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Habits' })).not.toBeInTheDocument()
+    expect(requests.filter((path) => path.endsWith('/habits'))).toEqual([])
+  })
+
   it('shows the dossier and a Login button beside Résumé, with no menu', () => {
     renderApp()
 
@@ -183,7 +197,7 @@ describe('login form', () => {
 
   it('can be submitted with Enter from the password field', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler)
+    server.use(loginHandler, logoutHandler, ...habitsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -253,7 +267,7 @@ describe('login form', () => {
 describe('successful login', () => {
   it('closes the modal, swaps Login for the account menu and shows the logged-in view', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler)
+    server.use(loginHandler, logoutHandler, ...habitsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -268,7 +282,7 @@ describe('successful login', () => {
 
   it('shows the username as plain text, then Log out, in the menu', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler)
+    server.use(loginHandler, logoutHandler, ...habitsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -295,6 +309,7 @@ describe('log out', () => {
     setSessionFlag()
     server.use(
       refreshHandler,
+      ...habitsHandlers(),
       http.delete(`${API_BASE}/session`, () => {
         deleted += 1
         return new HttpResponse(null, { status: 204 })
@@ -317,7 +332,7 @@ describe('log out', () => {
     ['a network error', () => HttpResponse.error()],
   ])('still logs out when the DELETE fails with %s', async (_label, answer) => {
     setSessionFlag()
-    server.use(refreshHandler, http.delete(`${API_BASE}/session`, answer))
+    server.use(refreshHandler, ...habitsHandlers(), http.delete(`${API_BASE}/session`, answer))
     renderApp()
 
     await openMenuAndLogOut()
@@ -362,6 +377,7 @@ describe('session restore on page load', () => {
     const g = gate()
     setSessionFlag()
     server.use(
+      ...habitsHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened
@@ -399,6 +415,38 @@ describe('session restore on page load', () => {
   })
 })
 
+describe('habit list', () => {
+  it('is fetched again after logging out and logging in again', async () => {
+    const user = userEvent.setup()
+    let fetches = 0
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      loginHandler,
+      logoutHandler,
+      // Counts the request, then returns nothing so the next handler (the habits list) answers it.
+      http.get(`${API_BASE}/habits`, () => {
+        fetches += 1
+      }),
+      ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
+    )
+    renderApp()
+    expect(await screen.findByText('Stretch')).toBeInTheDocument()
+    expect(fetches).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'Account menu' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Log out' }))
+    expect(await screen.findByRole('button', { name: 'Login' })).toBeInTheDocument()
+    expect(screen.queryByText('Stretch')).not.toBeInTheDocument()
+
+    const dialog = await openLoginDialog(user)
+    await fillAndSubmit(user, dialog, VALID_USERNAME, VALID_PASSWORD)
+
+    expect(await screen.findByText('Stretch')).toBeInTheDocument()
+    expect(fetches).toBe(2)
+  })
+})
+
 describe('/resume in every auth state', () => {
   const resumeHeading = () => screen.queryByRole('heading', { name: 'John LeBoeuf-Little' })
 
@@ -414,6 +462,7 @@ describe('/resume in every auth state', () => {
     const g = gate()
     setSessionFlag()
     server.use(
+      ...habitsHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened
