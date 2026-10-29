@@ -628,3 +628,285 @@ describe('add and delete across cached weeks', () => {
     expect(queryClient.getQueryData(lastWeek)).toEqual([{ id: 1, name: 'Drink water', completed_dates: [] }])
   })
 })
+
+describe('ticking a day', () => {
+  const stretch = { id: 7, name: 'Stretch', completed_dates: ['2026-10-26'] }
+  const wednesday = 'Stretch, Wednesday, October 28'
+  const completionPath = `${API_BASE}/habits/:id/completions/:date`
+
+  // Records each completion request as 'PUT /api/v1/habits/7/completions/2026-10-28 <auth>', then lets the shared
+  // handlers answer it.
+  function recordCompletions() {
+    const sent: string[] = []
+    const record = ({ request }: { request: Request }) => {
+      sent.push(`${request.method} ${new URL(request.url).pathname} ${request.headers.get('Authorization')}`)
+    }
+    server.use(http.put(completionPath, record), http.delete(completionPath, record))
+    return sent
+  }
+
+  // Counts GET /habits and, after the first, holds each answer until released.
+  function holdRefetches() {
+    const state = { gets: 0, release: () => {} }
+    const held = new Promise<void>((resolve) => (state.release = resolve))
+    server.use(
+      http.get(`${API_BASE}/habits`, async () => {
+        state.gets += 1
+        if (state.gets > 1) await held
+      }),
+    )
+    return state
+  }
+
+  // A gate that holds a handler's answer until the test opens it, and tells the test when the request arrived.
+  function gate() {
+    let open!: () => void
+    let arrived!: () => void
+    const opened = new Promise<void>((resolve) => (open = resolve))
+    const requested = new Promise<void>((resolve) => (arrived = resolve))
+    return { open, opened, arrived, requested }
+  }
+
+  it('ticks the box before the answer arrives and sends PUT /habits/7/completions/2026-10-28 with the token', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    const sent: string[] = []
+    server.use(
+      http.put(completionPath, async ({ request }) => {
+        sent.push(`${new URL(request.url).pathname} ${request.headers.get('Authorization')}`)
+        g.arrived()
+        await g.opened
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+    expect(box(wednesday)).not.toBeChecked()
+
+    await user.click(box(wednesday))
+    await g.requested
+
+    expect(box(wednesday)).toBeChecked()
+    expect(sent).toEqual([`/api/v1/habits/7/completions/2026-10-28 Bearer ${REFRESH_TOKEN}`])
+    g.open()
+    await waitFor(() => expect(box(wednesday)).toBeChecked())
+  })
+
+  it('sends DELETE on a second click, and the box is unticked', async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    const sent = recordCompletions()
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    await user.click(box(wednesday))
+
+    await waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent[1]).toBe(`DELETE /api/v1/habits/7/completions/2026-10-28 Bearer ${REFRESH_TOKEN}`)
+    await waitFor(() => expect(box(wednesday)).not.toBeChecked())
+  })
+
+  it('unticks a ticked day with Space on the focused box', async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    const sent = recordCompletions()
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    box('Stretch, Monday, October 26').focus()
+    await user.keyboard(' ')
+
+    expect(await screen.findByRole('checkbox', { name: 'Stretch, Monday, October 26' })).not.toBeChecked()
+    await waitFor(() => expect(sent).toEqual([`DELETE /api/v1/habits/7/completions/2026-10-26 Bearer ${REFRESH_TOKEN}`]))
+  })
+
+  it('keeps the tick after the refetch that follows, because the server saved it', async () => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+
+    await waitFor(() => expect(gets).toBe(2))
+    expect(box(wednesday)).toBeChecked()
+  })
+
+  it('runs two quick clicks on one box in order: DELETE waits for the PUT, the box ends unticked, one refetch', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    const order: string[] = []
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+      }),
+      http.put(completionPath, async () => {
+        order.push('PUT arrived')
+        g.arrived()
+        await g.opened
+        order.push('PUT answered')
+      }),
+      http.delete(completionPath, () => {
+        order.push('DELETE arrived')
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await g.requested
+    await user.click(box(wednesday))
+
+    // The second click shows at once, although its request waits behind the first.
+    await waitFor(() => expect(box(wednesday)).not.toBeChecked())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(order).toEqual(['PUT arrived'])
+
+    g.open()
+    await waitFor(() => expect(order).toEqual(['PUT arrived', 'PUT answered', 'DELETE arrived']))
+    await waitFor(() => expect(gets).toBe(2))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(gets).toBe(2)
+    expect(box(wednesday)).not.toBeChecked()
+  })
+
+  it.each([
+    ['a server error', () => new HttpResponse(null, { status: 500 })],
+    ['a network error', () => HttpResponse.error()],
+  ])('after %s reverts the box before any refetch, outlines the cell and names the box', async (_label, answer) => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    const refetches = holdRefetches()
+    server.use(http.put(completionPath, answer))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save Stretch, Wednesday Oct 28. Try again.")
+    expect(box(wednesday)).not.toBeChecked()
+    expect(box(wednesday).closest('td')).toHaveClass('outline-destructive')
+    expect(screen.getAllByRole('checkbox').filter((input) => input.closest('td.outline-destructive'))).toHaveLength(1)
+    // The refetch is still held, so the revert did not come from it.
+    expect(refetches.gets).toBeLessThanOrEqual(2)
+    refetches.release()
+  })
+
+  it('places the error line under the heading row and above the grid', async () => {
+    const user = userEvent.setup()
+    server.use(http.put(completionPath, () => new HttpResponse(null, { status: 500 })), ...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+
+    const alert = await screen.findByRole('alert')
+    const heading = screen.getByRole('heading', { name: 'Habits' })
+    const table = screen.getByRole('table')
+    expect(heading.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alert.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alert).toHaveClass('text-destructive')
+  })
+
+  it('keeps the error line until something clears it, not on a timer', async () => {
+    const user = userEvent.setup()
+    server.use(http.put(completionPath, () => new HttpResponse(null, { status: 500 })), ...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await screen.findByRole('alert')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('clears the error line and the outline when the next toggle starts, on any box', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    server.use(
+      http.put(completionPath, ({ params }) => {
+        if (params.date === '2026-10-28') return new HttpResponse(null, { status: 500 })
+      }),
+      http.delete(completionPath, async () => {
+        g.arrived()
+        await g.opened
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await screen.findByRole('alert')
+    await user.click(box('Stretch, Monday, October 26'))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(box(wednesday).closest('td')).not.toHaveClass('outline-destructive')
+    await g.requested
+    g.open()
+  })
+
+  it('clears the error line and the outline on Dismiss, and returns focus to the box', async () => {
+    const user = userEvent.setup()
+    server.use(http.put(completionPath, () => new HttpResponse(null, { status: 500 })), ...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await screen.findByRole('alert')
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(box(wednesday).closest('td')).not.toHaveClass('outline-destructive')
+    expect(box(wednesday)).toHaveFocus()
+  })
+
+  it('shows only the latest failure', async () => {
+    const user = userEvent.setup()
+    server.use(http.put(completionPath, () => new HttpResponse(null, { status: 500 })), ...habitsHandlers([stretch]))
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    await screen.findByText("Couldn't save Stretch, Wednesday Oct 28. Try again.")
+    await user.click(box('Stretch, Friday, October 30'))
+
+    expect(await screen.findByText("Couldn't save Stretch, Friday Oct 30. Try again.")).toBeInTheDocument()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(box(wednesday).closest('td')).not.toHaveClass('outline-destructive')
+    expect(box('Stretch, Friday, October 30').closest('td')).toHaveClass('outline-destructive')
+  })
+
+  it('treats a 404 as success: no alert, the grid is fetched again and the deleted habit goes', async () => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+        // After the first load the habit has been deleted in another tab.
+        if (gets > 1) return HttpResponse.json({ habits: [{ id: 3, name: 'Drink water', completed_dates: [] }] })
+      }),
+      http.put(completionPath, () => HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })),
+      ...habitsHandlers([{ id: 3, name: 'Drink water' }, stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+    expect(gets).toBe(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

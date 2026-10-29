@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, habitsHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createHabit, deleteHabit, listHabits } from './habits'
+import { createHabit, deleteCompletion, deleteHabit, listHabits, putCompletion } from './habits'
 
 beforeEach(() => {
   clearAccessToken()
@@ -76,5 +76,40 @@ describe('deleteHabit', () => {
   it('rejects with an ApiError on a 500', async () => {
     server.use(http.delete(`${API_BASE}/habits/9`, () => new HttpResponse(null, { status: 500 })))
     await expect(deleteHabit(9)).rejects.toMatchObject({ status: 500 })
+  })
+})
+
+describe.each([
+  ['putCompletion', putCompletion, 'PUT'],
+  ['deleteCompletion', deleteCompletion, 'DELETE'],
+] as const)('%s', (_name, send, method) => {
+  const path = `${API_BASE}/habits/7/completions/2026-10-28`
+  const handler = method === 'PUT' ? http.put : http.delete
+
+  it(`sends ${method} to the habit's completion for that date, with the bearer token and no body`, async () => {
+    const sent: { method: string; auth: string | null; body: string }[] = []
+    server.use(
+      handler(path, async ({ request }) => {
+        sent.push({ method: request.method, auth: request.headers.get('Authorization'), body: await request.text() })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    await send(7, '2026-10-28')
+    expect(sent).toEqual([{ method, auth: `Bearer ${REFRESH_TOKEN}`, body: '' }])
+  })
+
+  it.each([204, 404])('resolves on %i (a 404 means the habit is already gone)', async (status) => {
+    server.use(handler(path, () => new HttpResponse(null, { status })))
+    await expect(send(7, '2026-10-28')).resolves.toBeUndefined()
+  })
+
+  it('rejects with an ApiError on a 500', async () => {
+    server.use(handler(path, () => new HttpResponse(null, { status: 500 })))
+    await expect(send(7, '2026-10-28')).rejects.toMatchObject({ status: 500 })
+  })
+
+  it('rejects on a network error', async () => {
+    server.use(handler(path, () => HttpResponse.error()))
+    await expect(send(7, '2026-10-28')).rejects.toThrow()
   })
 })

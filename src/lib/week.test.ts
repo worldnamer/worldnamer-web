@@ -6,6 +6,7 @@ import {
   currentWeekStart,
   formatDayHeader,
   formatDayLabel,
+  formatDayShort,
   formatWeekRange,
   today,
   weekDays,
@@ -123,5 +124,9 @@ describe('day formats', () => {
   it('spells out the day for a checkbox label', () => {
     expect(formatDayLabel('2026-10-26')).toBe('Monday, October 26')
     expect(formatDayLabel('2026-11-01')).toBe('Sunday, November 1')
+  })
+
+  it('shortens the month for a message', () => {
+    expect(formatDayShort('2026-10-26')).toBe('Monday Oct 26')
   })
 })

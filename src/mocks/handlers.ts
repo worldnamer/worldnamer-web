@@ -127,5 +127,27 @@ export function habitsHandlers(initial: MockHabit[] = []) {
     return new HttpResponse(null, { status: 204 })
   })
 
-  return [list, create, remove]
+  // PUT ticks and DELETE unticks a day of a habit in the list: 204 whether or not it changed anything, 404 for any
+  // other habit. The date is taken as given; the tests only send dates the grid built.
+  const findHabit = (id: unknown) => habits.find((h) => String(h.id) === id)
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })
+
+  const tick = http.put(`${API_BASE}/habits/:id/completions/:date`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const habit = findHabit(params.id)
+    if (!habit) return notFound()
+    const date = String(params.date)
+    if (!habit.completed_dates.includes(date)) habit.completed_dates.push(date)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  const untick = http.delete(`${API_BASE}/habits/:id/completions/:date`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const habit = findHabit(params.id)
+    if (!habit) return notFound()
+    habit.completed_dates = habit.completed_dates.filter((date) => date !== params.date)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, remove, tick, untick]
 }
