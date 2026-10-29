@@ -1,8 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ApiError } from '@/api/client'
-import { createHabit, deleteHabit, listHabits, type Habit, type HabitWeek } from '@/api/habits'
+import {
+  createHabit,
+  deleteCompletion,
+  deleteHabit,
+  listHabits,
+  putCompletion,
+  type Habit,
+  type HabitWeek,
+} from '@/api/habits'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +23,15 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { currentWeekStart, formatDayHeader, formatDayLabel, formatWeekRange, today, weekDays } from '@/lib/week'
+import {
+  currentWeekStart,
+  formatDayHeader,
+  formatDayLabel,
+  formatDayShort,
+  formatWeekRange,
+  today,
+  weekDays,
+} from '@/lib/week'
 
 // The habit name, seven days and the Delete button.
 const columnCount = 9
@@ -115,6 +131,94 @@ function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
   )
 }
 
+// A box that failed to save: which habit and day, for the message and the cell's outline.
+type FailedBox = { habitId: number; name: string; date: string }
+
+// Ticks or unticks one day in one cached week, leaving every other cell alone.
+function setTicked(queryClient: QueryClient, weekStart: string, habitId: number, date: string, ticked: boolean) {
+  queryClient.setQueryData<HabitWeek[]>(['habits', weekStart], (old) =>
+    old?.map((h) => {
+      if (h.id !== habitId) return h
+      const others = h.completed_dates.filter((d) => d !== date)
+      return { ...h, completed_dates: ticked ? [...others, date].sort() : others }
+    }),
+  )
+}
+
+// One day of one habit: a native checkbox that saves as soon as it changes. The change shows at once (optimistic)
+// and is put back if the request fails.
+function DayCell({
+  habit,
+  date,
+  weekStart,
+  isToday,
+  failed,
+  onToggleStart,
+  onToggleFail,
+}: {
+  habit: HabitWeek
+  date: string
+  weekStart: string
+  isToday: boolean
+  failed: boolean
+  onToggleStart: () => void
+  onToggleFail: (box: FailedBox, input: HTMLInputElement | null) => void
+}) {
+  const queryClient = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const ticked = habit.completed_dates.includes(date)
+
+  const toggle = useMutation({
+    mutationKey: ['completion'],
+    // Mutations with the same scope run one after another, in order, so quick clicks on this box reach the server in
+    // the order they were made; other boxes still save in parallel. A queued click still runs onMutate at once.
+    scope: { id: `${habit.id}:${date}` },
+    mutationFn: (tick: boolean) => (tick ? putCompletion(habit.id, date) : deleteCompletion(habit.id, date)),
+    onMutate: async (tick) => {
+      // Cancel a week fetch in flight first, so its older answer cannot overwrite the change shown below.
+      await queryClient.cancelQueries({ queryKey: ['habits', weekStart] })
+      const week = queryClient.getQueryData<HabitWeek[]>(['habits', weekStart])
+      const wasTicked = week?.find((h) => h.id === habit.id)?.completed_dates.includes(date) ?? !tick
+      setTicked(queryClient, weekStart, habit.id, date, tick)
+      return { wasTicked }
+    },
+    onError: (_error, tick, context) => {
+      // Put the box back at once, without waiting for the refetch.
+      setTicked(queryClient, weekStart, habit.id, date, context?.wasTicked ?? !tick)
+      onToggleFail({ habitId: habit.id, name: habit.name, date }, inputRef.current)
+    },
+    onSettled: () => {
+      // Refetch the week once the last toggle in flight settles (this one still counts), so a burst of clicks ends in
+      // one request that brings in the server's state.
+      if (queryClient.isMutating({ mutationKey: ['completion'] }) === 1) {
+        void queryClient.invalidateQueries({ queryKey: ['habits', weekStart] })
+      }
+    },
+  })
+
+  return (
+    <td
+      className={cn(
+        'py-1 text-center',
+        isToday && todayClass,
+        failed && 'outline-2 -outline-offset-2 outline-destructive',
+      )}
+    >
+      <input
+        ref={inputRef}
+        type="checkbox"
+        aria-label={`${habit.name}, ${formatDayLabel(date)}`}
+        className="size-4 cursor-pointer align-middle accent-brand"
+        checked={ticked}
+        onChange={() => {
+          onToggleStart()
+          toggle.mutate(!ticked)
+        }}
+      />
+    </td>
+  )
+}
+
 // The logged-in user's habits as a grid: a row per habit and a column per day of one week, Monday to Sunday. Each
 // week is its own ['habits', weekStart] query, cached by TanStack Query; logout clears the cache.
 export function Habits() {
@@ -141,6 +245,9 @@ export function Habits() {
   const opener = useRef<HTMLElement | null>(null) // the row button that opened the dialog
   const [deletingIds, setDeletingIds] = useState<number[]>([])
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // The latest box that failed to save, and its checkbox, for Dismiss to return focus to.
+  const [failed, setFailed] = useState<FailedBox | null>(null)
+  const failedInput = useRef<HTMLInputElement | null>(null)
 
   const remove = useMutation({
     mutationFn: (habit: Habit) => deleteHabit(habit.id),
@@ -168,6 +275,17 @@ export function Habits() {
   function closeDraft(refocus: boolean) {
     refocusPlus.current = refocus
     setDrafting(false)
+  }
+
+  function recordFailure(box: FailedBox, input: HTMLInputElement | null) {
+    failedInput.current = input
+    setFailed(box)
+  }
+
+  function dismissFailure() {
+    setFailed(null)
+    // The Dismiss button is about to go, so focus moves to the box that failed, ready to try again.
+    failedInput.current?.focus()
   }
 
   function askToDelete(habit: Habit, button: HTMLElement) {
@@ -199,6 +317,16 @@ export function Habits() {
           </Button>
         </div>
       </div>
+      {failed !== null && (
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <p role="alert" className="text-sm text-destructive">
+            Couldn't save {failed.name}, {formatDayShort(failed.date)}. Try again.
+          </p>
+          <Button variant="ghost" size="sm" onClick={dismissFailure}>
+            Dismiss
+          </Button>
+        </div>
+      )}
       <div className="grid gap-2 border-b border-border py-2">
         {isPending && <p className="text-muted-foreground">Loading habits...</p>}
         {isError && (
@@ -239,15 +367,16 @@ export function Habits() {
                     {habit.name}
                   </th>
                   {days.map((day) => (
-                    <td key={day} className={cn('py-1 text-center', day === todayIso && todayClass)}>
-                      <input
-                        type="checkbox"
-                        aria-label={`${habit.name}, ${formatDayLabel(day)}`}
-                        className="size-4 align-middle accent-brand"
-                        checked={habit.completed_dates.includes(day)}
-                        readOnly
-                      />
-                    </td>
+                    <DayCell
+                      key={day}
+                      habit={habit}
+                      date={day}
+                      weekStart={weekStart}
+                      isToday={day === todayIso}
+                      failed={failed?.habitId === habit.id && failed.date === day}
+                      onToggleStart={() => setFailed(null)}
+                      onToggleFail={recordFailure}
+                    />
                   ))}
                   <td className="py-1 text-right">
                     <Button

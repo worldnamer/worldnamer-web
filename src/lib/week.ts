@@ -77,6 +77,12 @@ export function formatDayHeader(iso: string): string {
   return shortWeekdays[fromIso(iso).getDay()]
 }
 
+// 'Monday Oct 26', for a message about a day.
+export function formatDayShort(iso: string): string {
+  const date = fromIso(iso)
+  return `${longWeekdays[date.getDay()]} ${shortMonths[date.getMonth()]} ${date.getDate()}`
+}
+
 // 'Monday, October 26', for a checkbox's accessible name.
 export function formatDayLabel(iso: string): string {
   const date = fromIso(iso)
