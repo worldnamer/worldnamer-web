@@ -190,10 +190,11 @@ function DayCell({
       setTicked(queryClient, weekStart, habit.id, date, context?.wasTicked ?? !tick)
       onToggleFail({ habitId: habit.id, name: habit.name, date }, inputRef.current)
     },
-    onSettled: () => {
-      // Refetch the week once the last toggle in flight settles (this one still counts), so a burst of clicks ends in
-      // one request that brings in the server's state.
-      if (queryClient.isMutating({ mutationKey: ['completion'] }) === 1) {
+    onSettled: (_data, error) => {
+      // A 204 means the server did what the click asked, so the optimistic state is already right and nothing is
+      // refetched. After a failure the request may or may not have landed, so once the last toggle in flight settles
+      // (this one still counts) the week is refetched once to show the server's state.
+      if (error && queryClient.isMutating({ mutationKey: ['completion'] }) === 1) {
         void queryClient.invalidateQueries({ queryKey: ['habits', weekStart] })
       }
     },

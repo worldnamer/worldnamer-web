@@ -722,12 +722,16 @@ describe('ticking a day', () => {
     await waitFor(() => expect(sent).toEqual([`DELETE /api/v1/habits/7/completions/2026-10-26 Bearer ${REFRESH_TOKEN}`]))
   })
 
-  it('keeps the tick after the refetch that follows, because the server saved it', async () => {
+  it('keeps the tick without fetching the week again once the server has saved it', async () => {
     const user = userEvent.setup()
     let gets = 0
+    let puts = 0
     server.use(
       http.get(`${API_BASE}/habits`, () => {
         gets += 1
+      }),
+      http.put(completionPath, () => {
+        puts += 1
       }),
       ...habitsHandlers([stretch]),
     )
@@ -736,11 +740,13 @@ describe('ticking a day', () => {
 
     await user.click(box(wednesday))
 
-    await waitFor(() => expect(gets).toBe(2))
+    await waitFor(() => expect(puts).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(gets).toBe(1)
     expect(box(wednesday)).toBeChecked()
   })
 
-  it('runs two quick clicks on one box in order: DELETE waits for the PUT, the box ends unticked, one refetch', async () => {
+  it('runs two quick clicks on one box in order: DELETE waits for the PUT, the box ends unticked, no refetch', async () => {
     const user = userEvent.setup()
     const g = gate()
     const order: string[] = []
@@ -774,9 +780,8 @@ describe('ticking a day', () => {
 
     g.open()
     await waitFor(() => expect(order).toEqual(['PUT arrived', 'PUT answered', 'DELETE arrived']))
-    await waitFor(() => expect(gets).toBe(2))
     await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(gets).toBe(2)
+    expect(gets).toBe(1)
     expect(box(wednesday)).not.toBeChecked()
   })
 
@@ -888,16 +893,18 @@ describe('ticking a day', () => {
     expect(box('Stretch, Friday, October 30').closest('td')).toHaveClass('outline-destructive')
   })
 
-  it('treats a 404 as success: no alert, the grid is fetched again and the deleted habit goes', async () => {
+  it('treats a 404 as success: no alert and no refetch', async () => {
     const user = userEvent.setup()
     let gets = 0
+    let puts = 0
     server.use(
       http.get(`${API_BASE}/habits`, () => {
         gets += 1
-        // After the first load the habit has been deleted in another tab.
-        if (gets > 1) return HttpResponse.json({ habits: [{ id: 3, name: 'Drink water', completed_dates: [] }] })
       }),
-      http.put(completionPath, () => HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })),
+      http.put(completionPath, () => {
+        puts += 1
+        return HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })
+      }),
       ...habitsHandlers([{ id: 3, name: 'Drink water' }, stretch]),
     )
     renderHabits()
@@ -905,8 +912,9 @@ describe('ticking a day', () => {
 
     await user.click(box(wednesday))
 
-    await waitFor(() => expect(names()).toEqual(['Drink water']))
-    expect(gets).toBe(2)
+    await waitFor(() => expect(puts).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(gets).toBe(1)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
@@ -990,7 +998,7 @@ describe('moving between weeks', () => {
     await tableNamed('Dec 28 – Jan 3, 2027')
   })
 
-  it("sends a past week's date when a box is ticked there, and the tick survives the refetch", async () => {
+  it("sends a past week's date when a box is ticked there, and the tick stays without a refetch", async () => {
     const user = userEvent.setup()
     const sent: string[] = []
     let gets = 0
@@ -1011,8 +1019,9 @@ describe('moving between weeks', () => {
 
     await user.click(box('Stretch, Wednesday, October 21'))
 
-    await waitFor(() => expect(gets).toBe(3))
-    expect(sent).toEqual(['/api/v1/habits/7/completions/2026-10-21'])
+    await waitFor(() => expect(sent).toEqual(['/api/v1/habits/7/completions/2026-10-21']))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(gets).toBe(2)
     expect(box('Stretch, Wednesday, October 21')).toBeChecked()
   })
 
