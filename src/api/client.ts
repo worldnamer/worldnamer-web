@@ -6,15 +6,34 @@ export const API_BASE = `${import.meta.env.VITE_API_URL}/api/v1`
 
 export type SessionUser = { username: string }
 
-// Thrown by the session functions when the API answers with a non-2xx status.
+// Thrown by the API functions when the API answers with a non-2xx status. code and serverMessage come from the error
+// body ({ error: { code, message } }) when it has one; the session functions only pass a status.
 export class ApiError extends Error {
   status: number
+  code?: string
+  serverMessage?: string
 
-  constructor(status: number) {
+  constructor(status: number, code?: string, serverMessage?: string) {
     super(`HTTP ${status}`)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
+    this.serverMessage = serverMessage
   }
+}
+
+// Builds an ApiError from a non-2xx response. The body is read defensively: it may be empty, not JSON, or not our shape.
+export async function apiErrorFrom(response: Response): Promise<ApiError> {
+  let code: string | undefined
+  let message: string | undefined
+  try {
+    const body = (await response.json()) as { error?: { code?: unknown; message?: unknown } }
+    if (typeof body.error?.code === 'string') code = body.error.code
+    if (typeof body.error?.message === 'string') message = body.error.message
+  } catch {
+    // No usable body: only the status is known.
+  }
+  return new ApiError(response.status, code, message)
 }
 
 type TokenResponse = { access_token: string; user: SessionUser }

@@ -69,5 +69,27 @@ export function habitsHandlers(initial: MockHabit[] = []) {
     return HttpResponse.json({ habits })
   })
 
-  return [list]
+  let nextId = Math.max(0, ...habits.map((h) => h.id)) + 1
+
+  // Mirrors the API: strips the name, refuses a blank or over-100 one with 422, and answers a body without `habit` with 400.
+  const create = http.post(`${API_BASE}/habits`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const body = (await request.json()) as { habit?: { name?: string | null } }
+    if (!body.habit) {
+      return HttpResponse.json(errorBody('bad_request', 'Request body is malformed.'), { status: 400 })
+    }
+    const name = (body.habit.name ?? '').trim()
+    if (name === '') {
+      return HttpResponse.json(errorBody('validation_failed', "Name can't be blank."), { status: 422 })
+    }
+    if ([...name].length > 100) {
+      const message = 'Name is too long (maximum is 100 characters).'
+      return HttpResponse.json(errorBody('validation_failed', message), { status: 422 })
+    }
+    const habit = { id: nextId++, name }
+    habits.push(habit)
+    return HttpResponse.json({ habit }, { status: 201 })
+  })
+
+  return [list, create]
 }

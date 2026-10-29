@@ -1,4 +1,4 @@
-import { apiFetch, ApiError } from './client'
+import { apiErrorFrom, apiFetch, ApiError } from './client'
 
 export type Habit = { id: number; name: string }
 
@@ -8,4 +8,17 @@ export async function listHabits(): Promise<Habit[]> {
   if (!response.ok) throw new ApiError(response.status)
   const body = (await response.json()) as { habits: Habit[] }
   return body.habits
+}
+
+// POST /habits. Resolves the created habit (the name comes back with surrounding spaces stripped). A 422 rejects with
+// an ApiError whose serverMessage says what is wrong with the name.
+export async function createHabit(name: string): Promise<Habit> {
+  const response = await apiFetch('/habits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ habit: { name } }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { habit: Habit }
+  return body.habit
 }
