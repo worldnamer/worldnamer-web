@@ -910,3 +910,170 @@ describe('ticking a day', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
+
+describe('moving between weeks', () => {
+  const stretch = { id: 7, name: 'Stretch', completed_dates: ['2026-10-19', '2026-10-28', '2026-11-03'] }
+  const previous = () => screen.getByRole('button', { name: 'Previous week' })
+  const next = () => screen.getByRole('button', { name: 'Next week' })
+  const tableNamed = (range: string) => screen.findByRole('table', { name: `Habits ${range}` })
+
+  it("shows the next week's range and ticks after Next, asking for week_start=2026-11-02", async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    const weeks = recordWeekStarts()
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+
+    await user.click(next())
+
+    await tableNamed('Nov 2 – Nov 8')
+    await waitFor(() => expect(checkedBoxes()).toEqual(['Stretch, Tuesday, November 3']))
+    expect(weeks).toEqual(['2026-10-26', '2026-11-02'])
+    expect(screen.getByText('Nov 2 – Nov 8')).toBeInTheDocument()
+  })
+
+  it('reaches Oct 19 – Oct 25 with Previous twice, using the keyboard', async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+
+    previous().focus()
+    await user.keyboard('{Enter}')
+    await tableNamed('Oct 19 – Oct 25')
+    await user.keyboard(' ')
+    await tableNamed('Oct 12 – Oct 18')
+    next().focus()
+    await user.keyboard('{Enter}')
+
+    await tableNamed('Oct 19 – Oct 25')
+    await waitFor(() => expect(checkedBoxes()).toEqual(['Stretch, Monday, October 19']))
+  })
+
+  it('shows the year once a week reaches into a past year', async () => {
+    const user = userEvent.setup()
+    vi.setSystemTime(new Date(2026, 0, 7, 12, 0))
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await tableNamed('Jan 5 – Jan 11')
+
+    await user.click(previous())
+    await tableNamed('Dec 29 – Jan 4, 2026')
+    await user.click(previous())
+    await tableNamed('Dec 22 – Dec 28, 2025')
+  })
+
+  it('shows the next year once a week reaches into it', async () => {
+    const user = userEvent.setup()
+    vi.setSystemTime(new Date(2026, 11, 23, 12, 0))
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await tableNamed('Dec 21 – Dec 27')
+
+    await user.click(next())
+
+    await tableNamed('Dec 28 – Jan 3, 2027')
+  })
+
+  it("sends a past week's date when a box is ticked there, and the tick survives the refetch", async () => {
+    const user = userEvent.setup()
+    const sent: string[] = []
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+      }),
+      http.put(`${API_BASE}/habits/:id/completions/:date`, ({ request }) => {
+        sent.push(new URL(request.url).pathname)
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+    await user.click(previous())
+    await tableNamed('Oct 19 – Oct 25')
+    await waitFor(() => expect(box('Stretch, Wednesday, October 21')).toBeEnabled())
+
+    await user.click(box('Stretch, Wednesday, October 21'))
+
+    await waitFor(() => expect(gets).toBe(3))
+    expect(sent).toEqual(['/api/v1/habits/7/completions/2026-10-21'])
+    expect(box('Stretch, Wednesday, October 21')).toBeChecked()
+  })
+
+  it('disables the boxes and marks the table busy while the new week loads', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    server.use(
+      http.get(`${API_BASE}/habits`, async ({ request }) => {
+        if (new URL(request.url).searchParams.get('week_start') === '2026-11-02') await held
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    const table = await tableNamed('Oct 26 – Nov 1')
+    expect(table).toHaveAttribute('aria-busy', 'false')
+    expect(screen.getAllByRole('checkbox').every((input) => !(input as HTMLInputElement).disabled)).toBe(true)
+
+    await user.click(next())
+
+    expect(await tableNamed('Nov 2 – Nov 8')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getAllByRole('checkbox')).toHaveLength(7)
+    expect(screen.getAllByRole('checkbox').every((input) => (input as HTMLInputElement).disabled)).toBe(true)
+    release()
+    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false'))
+    expect(screen.getAllByRole('checkbox').every((input) => !(input as HTMLInputElement).disabled)).toBe(true)
+  })
+
+  it('announces the range politely', async () => {
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+
+    expect(screen.getByText('Oct 26 – Nov 1')).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it("marks no column as today's after Next or Previous, and marks it again on coming back", async () => {
+    const user = userEvent.setup()
+    server.use(...habitsHandlers([stretch]))
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+    const current = () => screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-current'))
+    const highlighted = () => document.querySelectorAll(`.${CSS.escape(todayClass)}`)
+
+    await user.click(next())
+    await tableNamed('Nov 2 – Nov 8')
+    expect(current()).toEqual([])
+    expect(highlighted()).toHaveLength(0)
+
+    await user.click(previous())
+    await user.click(previous())
+    await tableNamed('Oct 19 – Oct 25')
+    expect(current()).toEqual([])
+    expect(highlighted()).toHaveLength(0)
+
+    await user.click(next())
+    await tableNamed('Oct 26 – Nov 1')
+    expect(current().map((header) => header.textContent)).toEqual(['Thu'])
+  })
+
+  it('clears the error line and the outline when the week changes', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.put(`${API_BASE}/habits/:id/completions/:date`, () => new HttpResponse(null, { status: 500 })),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await tableNamed('Oct 26 – Nov 1')
+
+    await user.click(box('Stretch, Friday, October 30'))
+    await screen.findByRole('alert')
+    await user.click(next())
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(previous())
+    await tableNamed('Oct 26 – Nov 1')
+    expect(box('Stretch, Friday, October 30').closest('td')).not.toHaveClass('outline-destructive')
+  })
+})
