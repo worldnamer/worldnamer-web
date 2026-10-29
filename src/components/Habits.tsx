@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 const inputClass =
   'h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
-// The draft row at the end of the list. Enter commits, Escape cancels, and focus leaving commits the text or, if the
+// The draft row at the end of the table. Enter commits, Escape cancels, and focus leaving commits the text or, if the
 // input is empty, cancels. A 422 shows the API's own message; anything else (5xx, network error) shows a generic one.
 // The server decides what a good name is, so the browser only checks for an empty input.
 function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
@@ -77,27 +77,31 @@ function DraftRow({ onClose }: { onClose: (refocusPlus: boolean) => void }) {
   }
 
   return (
-    <li className="grid gap-1 py-1">
-      <input
-        ref={inputRef}
-        type="text"
-        aria-label="New habit"
-        autoComplete="off"
-        className={inputClass}
-        value={name}
-        onChange={(e) => {
-          setName(e.target.value)
-          setError(null)
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
-      />
-      {error !== null && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </li>
+    <tr>
+      <td colSpan={2} className="py-1">
+        <div className="grid gap-1">
+          <input
+            ref={inputRef}
+            type="text"
+            aria-label="New habit"
+            autoComplete="off"
+            className={inputClass}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value)
+              setError(null)
+            }}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+          />
+          {error !== null && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -182,25 +186,38 @@ export function Habits() {
         )}
         {data && data.length === 0 && !drafting && <p className="text-muted-foreground">No habits yet.</p>}
         {data && (data.length > 0 || drafting) && (
-          // role="list" because Tailwind removes the bullets, and Safari VoiceOver then stops announcing a list.
-          <ul role="list" className="grid">
-            {data.map((habit) => (
-              <li key={habit.id} className="flex items-center justify-between gap-3 py-1">
-                <span>{habit.name}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label={`Delete ${habit.name}`}
-                  disabled={deletingIds.includes(habit.id)}
-                  onClick={(event) => askToDelete(habit, event.currentTarget)}
-                >
-                  Delete
-                </Button>
-              </li>
-            ))}
-            {drafting && <DraftRow onClose={closeDraft} />}
-          </ul>
+          <table aria-labelledby="habits-heading" className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th scope="col" className="sr-only">
+                  Habit
+                </th>
+                <td />
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((habit) => (
+                <tr key={habit.id}>
+                  <th scope="row" className="py-1 text-left font-normal">
+                    {habit.name}
+                  </th>
+                  <td className="py-1 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={`Delete ${habit.name}`}
+                      disabled={deletingIds.includes(habit.id)}
+                      onClick={(event) => askToDelete(habit, event.currentTarget)}
+                    >
+                      Delete
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {drafting && <DraftRow onClose={closeDraft} />}
+            </tbody>
+          </table>
         )}
         {deleteError !== null && (
           <p role="alert" className="text-sm text-destructive">
