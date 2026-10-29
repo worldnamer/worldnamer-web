@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { PlusIcon } from 'lucide-react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ApiError } from '@/api/client'
 import {
@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
+  addWeeks,
   currentWeekStart,
   formatDayHeader,
   formatDayLabel,
@@ -153,6 +154,7 @@ function DayCell({
   weekStart,
   isToday,
   failed,
+  disabled,
   onToggleStart,
   onToggleFail,
 }: {
@@ -161,6 +163,7 @@ function DayCell({
   weekStart: string
   isToday: boolean
   failed: boolean
+  disabled: boolean
   onToggleStart: () => void
   onToggleFail: (box: FailedBox, input: HTMLInputElement | null) => void
 }) {
@@ -208,8 +211,9 @@ function DayCell({
         ref={inputRef}
         type="checkbox"
         aria-label={`${habit.name}, ${formatDayLabel(date)}`}
-        className="size-4 cursor-pointer align-middle accent-brand"
+        className="size-4 cursor-pointer align-middle accent-brand disabled:cursor-default"
         checked={ticked}
+        disabled={disabled}
         onChange={() => {
           onToggleStart()
           toggle.mutate(!ticked)
@@ -226,11 +230,14 @@ export function Habits() {
   // Today and its week are read from the clock once, when the grid mounts (reading it during render is impure). A tab
   // left open past midnight keeps showing the day it opened on until it is reloaded.
   const [todayIso] = useState(today)
-  const [weekStart] = useState(currentWeekStart)
-  const { data, isPending, isError } = useQuery({
+  const [weekStart, setWeekStart] = useState(currentWeekStart)
+  const { data, isPending, isError, isPlaceholderData } = useQuery({
     queryKey: ['habits', weekStart],
     queryFn: () => listHabits(weekStart),
     retry: false, // a down API should show the error at once, not after several retries
+    // While another week loads, keep the last week's rows on screen, so the layout does not jump. isPlaceholderData is
+    // true meanwhile, and the boxes are disabled, so nothing can be ticked under the wrong dates.
+    placeholderData: keepPreviousData,
   })
   const days = weekDays(weekStart)
   const range = formatWeekRange(weekStart, Number(todayIso.slice(0, 4)))
@@ -277,6 +284,11 @@ export function Habits() {
     setDrafting(false)
   }
 
+  function moveWeek(weeks: number) {
+    setFailed(null)
+    setWeekStart((start) => addWeeks(start, weeks))
+  }
+
   function recordFailure(box: FailedBox, input: HTMLInputElement | null) {
     failedInput.current = input
     setFailed(box)
@@ -302,9 +314,16 @@ export function Habits() {
           Habits
         </h2>
         <div className="flex items-center gap-2">
-          <span id="habits-range" className="text-sm text-muted-foreground">
+          {/* A polite live region, so a screen reader reads the new range after Previous or Next. */}
+          <span id="habits-range" aria-live="polite" className="text-sm text-muted-foreground">
             {range}
           </span>
+          <Button variant="ghost" size="icon-sm" aria-label="Previous week" onClick={() => moveWeek(-1)}>
+            <ChevronLeftIcon />
+          </Button>
+          <Button variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => moveWeek(1)}>
+            <ChevronRightIcon />
+          </Button>
           <Button
             ref={plusRef}
             variant="ghost"
@@ -337,7 +356,11 @@ export function Habits() {
         {data && data.length === 0 && !drafting && <p className="text-muted-foreground">No habits yet.</p>}
         {data && (data.length > 0 || drafting) && (
           // Named by the heading and the range, so a screen reader announces "Habits Oct 26 – Nov 1".
-          <table aria-labelledby="habits-heading habits-range" className="w-full border-collapse">
+          <table
+            aria-labelledby="habits-heading habits-range"
+            aria-busy={isPlaceholderData}
+            className="w-full border-collapse"
+          >
             <thead>
               <tr>
                 {/* sr-only goes on the text, not the cell: a cell taken out of the layout would shift the columns. */}
@@ -374,6 +397,7 @@ export function Habits() {
                       weekStart={weekStart}
                       isToday={day === todayIso}
                       failed={failed?.habitId === habit.id && failed.date === day}
+                      disabled={isPlaceholderData}
                       onToggleStart={() => setFailed(null)}
                       onToggleFail={recordFailure}
                     />
