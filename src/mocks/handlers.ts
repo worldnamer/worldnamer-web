@@ -47,3 +47,58 @@ export const meHandler = http.get(`${API_BASE}/me`, ({ request }) => {
 })
 
 export const sessionHandlers = [loginHandler, refreshHandler, logoutHandler, meHandler]
+
+// The habit list (specs/habit-list.md). habitsHandlers(initial) keeps one in-memory list that its handlers share, so a
+// POST shows up in the next GET. Like the session handlers it is opt-in: server.use(...habitsHandlers([...])).
+export type MockHabit = { id: number; name: string }
+
+const unauthenticated = () =>
+  HttpResponse.json(errorBody('unauthenticated', 'Unauthenticated.'), { status: 401 })
+
+// True for the two tokens the session handlers hand out.
+function hasMockToken(request: Request) {
+  const auth = request.headers.get('Authorization')
+  return auth === `Bearer ${REFRESH_TOKEN}` || auth === `Bearer ${LOGIN_TOKEN}`
+}
+
+export function habitsHandlers(initial: MockHabit[] = []) {
+  const habits = [...initial]
+
+  const list = http.get(`${API_BASE}/habits`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ habits })
+  })
+
+  let nextId = Math.max(0, ...habits.map((h) => h.id)) + 1
+
+  // Mirrors the API: strips the name, refuses a blank or over-100 one with 422, and answers a body without `habit` with 400.
+  const create = http.post(`${API_BASE}/habits`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const body = (await request.json()) as { habit?: { name?: string | null } }
+    if (!body.habit) {
+      return HttpResponse.json(errorBody('bad_request', 'Request body is malformed.'), { status: 400 })
+    }
+    const name = (body.habit.name ?? '').trim()
+    if (name === '') {
+      return HttpResponse.json(errorBody('validation_failed', "Name can't be blank."), { status: 422 })
+    }
+    if ([...name].length > 100) {
+      const message = 'Name is too long (maximum is 100 characters).'
+      return HttpResponse.json(errorBody('validation_failed', message), { status: 422 })
+    }
+    const habit = { id: nextId++, name }
+    habits.push(habit)
+    return HttpResponse.json({ habit }, { status: 201 })
+  })
+
+  // 204 for a habit in the list, 404 for anything else (like the API does for a missing or someone else's habit).
+  const remove = http.delete(`${API_BASE}/habits/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = habits.findIndex((h) => String(h.id) === params.id)
+    if (index === -1) return HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })
+    habits.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, remove]
+}
