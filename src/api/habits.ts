@@ -2,12 +2,17 @@ import { apiErrorFrom, apiFetch, ApiError } from './client'
 
 export type Habit = { id: number; name: string }
 
-// GET /habits, oldest first. Rejects with ApiError on a non-2xx answer.
-export async function listHabits(): Promise<Habit[]> {
-  const response = await apiFetch('/habits')
+// A habit with the dates ticked in one week ('YYYY-MM-DD', ascending).
+export type HabitWeek = Habit & { completed_dates: string[] }
+
+// GET /habits?week_start=..., oldest first, each habit with its completed dates in the week that starts on weekStart
+// (a Monday). Rejects with ApiError on a non-2xx answer. A habit without completed_dates (an API from before ticking
+// existed) is read as having none, so the grid still renders against it.
+export async function listHabits(weekStart: string): Promise<HabitWeek[]> {
+  const response = await apiFetch(`/habits?week_start=${encodeURIComponent(weekStart)}`)
   if (!response.ok) throw new ApiError(response.status)
-  const body = (await response.json()) as { habits: Habit[] }
-  return body.habits
+  const body = (await response.json()) as { habits: (Habit & { completed_dates?: string[] })[] }
+  return body.habits.map((h) => ({ ...h, completed_dates: h.completed_dates ?? [] }))
 }
 
 // POST /habits. Resolves the created habit (the name comes back with surrounding spaces stripped). A 422 rejects with

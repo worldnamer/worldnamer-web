@@ -12,6 +12,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     // Tests talk to a mocked API at this address (see src/mocks/server.ts); it is never contacted for real.
-    env: { VITE_API_URL: 'http://api.test' },
+    // TZ pins the tests to a US time zone with daylight saving time, so date code that slips into UTC is a day off in
+    // the tests (as it would be for a visitor in the evening), not only on a machine set to America.
+    env: { VITE_API_URL: 'http://api.test', TZ: 'America/Los_Angeles' },
   },
 })
