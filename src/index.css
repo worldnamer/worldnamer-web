@@ -22,6 +22,18 @@
   --skill: #10b981;
   /* Badges for concepts that are not a specific technology (REST, NoSQL). A cool silver, a bit dimmer than the body text. */
   --concept: #a2aab4;
+  /* Added with the shadcn Dialog / DropdownMenu / Button, which reference these by name. Mapped onto the site's palette. */
+  --popover: #10151c;
+  --popover-foreground: #bbbbbb;
+  --primary: #06b6d4;
+  --primary-foreground: #0b0f14;
+  --secondary: #1f2933;
+  --secondary-foreground: #bbbbbb;
+  --accent: #1f2933;
+  --accent-foreground: #e5e7eb;
+  --destructive: #f87171;
+  --input: #1f2933;
+  --ring: #06b6d4;
 }
 
 @theme inline {
@@ -33,6 +45,17 @@
   --color-brand: var(--brand);
   --color-skill: var(--skill);
   --color-concept: var(--concept);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --font-sans: 'Inter Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Play', 'Inter Variable', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
