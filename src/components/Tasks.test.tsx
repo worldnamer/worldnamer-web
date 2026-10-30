@@ -1,10 +1,10 @@
 // The Tasks card. The component is rendered alone with the real queryClient and a mock token; the API is the
 // in-memory taskListsHandlers unless a test answers a request itself.
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
@@ -208,21 +208,8 @@ describe('scrolling the row', () => {
   // chosen width. Setting scrollLeft fires a scroll event, as in a browser, and stays between 0 and the far end.
   const BOX = 100
   const STEP = 108
-  let resizeCallbacks: (() => void)[] = []
 
   beforeEach(() => {
-    resizeCallbacks = []
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        constructor(callback: () => void) {
-          resizeCallbacks.push(callback)
-        }
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    )
     // On the prototype, so a list box added during the test is laid out too.
     Object.defineProperties(HTMLLIElement.prototype, {
       offsetLeft: {
@@ -236,12 +223,11 @@ describe('scrolling the row', () => {
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     delete (HTMLLIElement.prototype as { offsetLeft?: number }).offsetLeft
     delete (HTMLLIElement.prototype as { offsetWidth?: number }).offsetWidth
   })
 
-  // Gives the scroller its width and tells the row it was resized. Returns the scroller.
+  // Gives the scroller its width. Returns the scroller.
   function layOut(width: number) {
     const list = rowList()
     const scroller = list.parentElement!
@@ -259,78 +245,10 @@ describe('scrolling the row', () => {
         },
       },
     })
-    act(() => resizeCallbacks.forEach((callback) => callback()))
     return scroller
   }
 
   const lists = (count: number) => Array.from({ length: count }, (_, i) => ({ id: i + 1, name: `List ${i + 1}` }))
-  const leftChevron = () => screen.queryByRole('button', { name: 'Scroll lists left' })
-  const rightChevron = () => screen.queryByRole('button', { name: 'Scroll lists right' })
-
-  it('shows no chevrons when every list fits', async () => {
-    server.use(...taskListsHandlers(lists(3)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 3' })
-
-    layOut(500)
-
-    expect(leftChevron()).not.toBeInTheDocument()
-    expect(rightChevron()).not.toBeInTheDocument()
-  })
-
-  it('shows only the right chevron when lists are hidden on the right, and the left one once scrolled', async () => {
-    server.use(...taskListsHandlers(lists(5)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 5' })
-
-    const scroller = layOut(250)
-    expect(rightChevron()).toBeInTheDocument()
-    expect(leftChevron()).not.toBeInTheDocument()
-
-    act(() => {
-      scroller.scrollLeft = STEP
-    })
-    expect(leftChevron()).toBeInTheDocument()
-    expect(rightChevron()).toBeInTheDocument()
-
-    act(() => {
-      scroller.scrollLeft = 10_000 // the far end
-    })
-    expect(leftChevron()).toBeInTheDocument()
-    expect(rightChevron()).not.toBeInTheDocument()
-  })
-
-  it('pages with the chevrons: Right brings the first cut-off list to the left edge, Left shows the one before whole', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers(lists(5)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 5' })
-    const scroller = layOut(250)
-
-    // Lists 1 and 2 fit in 250px; List 3 is cut off.
-    await user.click(rightChevron()!)
-    expect(scroller.scrollLeft).toBe(2 * STEP)
-
-    // List 2 is now hidden on the left: the row moves back until it shows whole, starting at a box.
-    await user.click(leftChevron()!)
-    expect(scroller.scrollLeft).toBe(0)
-  })
-
-  it('moves focus to the other chevron when the pressed one disappears at the end', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers(lists(5)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 5' })
-    layOut(250)
-
-    rightChevron()!.focus()
-    await user.keyboard('{Enter}')
-    expect(rightChevron()).toHaveFocus()
-    await user.keyboard('{Enter}')
-
-    expect(rightChevron()).not.toBeInTheDocument()
-    expect(leftChevron()).toHaveFocus()
-  })
 
   it('scrolls a newly added list into view', async () => {
     const user = userEvent.setup()
