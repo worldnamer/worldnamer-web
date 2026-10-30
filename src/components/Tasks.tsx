@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PencilIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
-import { createTaskList, listTaskLists, type TaskList } from '@/api/taskLists'
+import { createTaskList, listTaskLists, renameTaskList, type TaskList } from '@/api/taskLists'
 import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
 import { Button } from '@/components/ui/button'
@@ -62,6 +62,32 @@ export function Tasks() {
   // Resolves the new list, or null if it was not saved (the error line says why).
   const addList = (name: string) => create.mutateAsync(name).catch(() => null)
 
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => renameTaskList(id, name),
+    onMutate: () => setError(null),
+    onSuccess: (saved) => {
+      queryClient.setQueryData<TaskList[]>(['task_lists'], (old) => old?.map((l) => (l.id === saved.id ? saved : l)))
+    },
+    onError: (e) => {
+      // A 404 means the list was deleted elsewhere: fetch the lists again, quietly, and it goes.
+      if (e instanceof ApiError && e.status === 404) {
+        void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+        return
+      }
+      setError(refusal(e) || "Couldn't rename the list. Try again.")
+    },
+  })
+
+  // Resolves the name as saved, or null if it was not (the error line says why). A name that would not change once
+  // the API strips its spaces is not sent at all.
+  function renameList(list: TaskList, text: string) {
+    if (text.trim() === list.name) return Promise.resolve(list.name)
+    return rename.mutateAsync({ id: list.id, name: text }).then(
+      (saved) => saved.name,
+      () => null,
+    )
+  }
+
   return (
     <section aria-labelledby="tasks-heading" className="w-full lg:w-1/2">
       {/* min-h-10 matches the Habits heading row, whose icon buttons make it that tall. */}
@@ -97,7 +123,7 @@ export function Tasks() {
         {data && mode === 'row' && (
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
-        {data && mode === 'editor' && <TaskListEditor lists={data} onConfirm={closeEditor} />}
+        {data && mode === 'editor' && <TaskListEditor lists={data} onRename={renameList} onConfirm={closeEditor} />}
       </div>
     </section>
   )

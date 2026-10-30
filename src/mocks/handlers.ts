@@ -188,5 +188,19 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
     return HttpResponse.json({ task_list: created }, { status: 201 })
   })
 
-  return [list, create]
+  // Renames a list in the store; any other id gets the API's 404, as a missing list or someone else's does.
+  const findList = (id: unknown) => lists.find((l) => String(l.id) === id)
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+  const rename = http.patch(`${API_BASE}/task_lists/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = findList(params.id)
+    if (!found) return notFound()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    found.name = name
+    return HttpResponse.json({ task_list: { id: found.id, name: found.name } })
+  })
+
+  return [list, create, rename]
 }

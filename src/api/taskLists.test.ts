@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createTaskList, listTaskLists } from './taskLists'
+import { createTaskList, listTaskLists, renameTaskList } from './taskLists'
 
 beforeEach(() => {
   clearAccessToken()
@@ -60,5 +60,24 @@ describe('createTaskList', () => {
     const error = await createTaskList('x').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ status: 422, serverMessage: 'Name is too long (maximum is 100 characters).' })
+  })
+})
+
+describe('renameTaskList', () => {
+  it('sends PATCH /task_lists/<id> with the name and resolves the saved list', async () => {
+    let body: unknown = null
+    server.use(
+      http.patch(`${API_BASE}/task_lists/4`, async ({ request }) => {
+        body = await request.clone().json()
+      }),
+      ...taskListsHandlers([{ id: 4, name: 'Chores' }]),
+    )
+    await expect(renameTaskList(4, ' Errands ')).resolves.toEqual({ id: 4, name: 'Errands' })
+    expect(body).toEqual({ task_list: { name: ' Errands ' } })
+  })
+
+  it('rejects with a 404 for a list that is gone', async () => {
+    server.use(...taskListsHandlers([]))
+    await expect(renameTaskList(4, 'Errands')).rejects.toMatchObject({ status: 404, code: 'not_found' })
   })
 })

@@ -731,3 +731,210 @@ describe('the editor', () => {
     expect(nameBoxes()).toEqual(['Chores'])
   })
 })
+
+describe('renaming a list in the editor', () => {
+  const nameBox = (index: number) => screen.getAllByRole('textbox', { name: 'List name' })[index] as HTMLInputElement
+  const nameBoxes = () => screen.queryAllByRole('textbox', { name: 'List name' }).map((input) => (input as HTMLInputElement).value)
+
+  async function openEditor(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('button', { name: 'Chores' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+  }
+
+  // Clears a name box and types into it.
+  async function retype(user: ReturnType<typeof userEvent.setup>, index: number, text: string) {
+    await user.clear(nameBox(index))
+    if (text !== '') await user.type(nameBox(index), text)
+  }
+
+  it('sends PATCH /task_lists/<id> on Enter, and the new name shows in the editor and the row', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('patch', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 1, 'Vertex Rim Parts{Enter}')
+
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toEqual({
+      path: '/api/v1/task_lists/2',
+      body: { task_list: { name: 'Vertex Rim Parts' } },
+      auth: `Bearer ${REFRESH_TOKEN}`,
+    })
+    expect(nameBox(1)).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+    expect(await screen.findByRole('button', { name: 'Vertex Rim Parts' })).toBeInTheDocument()
+    expect(rowNames()).toEqual(['Shopping List', 'Vertex Rim Parts', 'Chores'])
+  })
+
+  it('saves when focus leaves the box, and the name stays after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const { unmount } = renderTasks()
+    await openEditor(user)
+
+    await retype(user, 2, 'Errands')
+    await user.tab()
+    await waitFor(() => expect(queryClient.getQueryData(['task_lists'])).toContainEqual({ id: 9, name: 'Errands' }))
+    unmount()
+    queryClient.clear()
+
+    renderTasks()
+    expect(await screen.findByRole('button', { name: 'Errands' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Errands'])
+  })
+
+  it('shows the name as the API saved it, without surrounding spaces', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, '  Groceries  {Enter}')
+
+    await waitFor(() => expect(nameBox(0)).toHaveValue('Groceries'))
+  })
+
+  it('allows a blank name, which the row then shows as an empty box', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('patch', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 2, '')
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+
+    expect(await screen.findByRole('button', { name: 'Unnamed list' })).toBeInTheDocument()
+    expect(sent.map((r) => r.body)).toEqual([{ task_list: { name: '' } }])
+  })
+
+  it('sends nothing when the name has not changed, or changed only by surrounding spaces', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('patch', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(nameBox(0))
+    await user.keyboard('{Enter}')
+    await user.tab()
+    await user.type(nameBox(1), '  ')
+    await user.keyboard('{Enter}')
+    await user.tab()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(sent).toEqual([])
+    expect(nameBox(1)).toHaveValue('Vertex Rim')
+  })
+
+  it('puts the saved name back on Escape and sends nothing', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('patch', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, 'Groceries{Escape}')
+    expect(nameBox(0)).toHaveValue('Shopping List')
+    expect(nameBox(0)).toHaveFocus()
+    await user.tab()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(sent).toEqual([])
+  })
+
+  it("shows the API's message for a 422, keeps the text, and does not resend on blur until edited", async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('patch', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, `${'x'.repeat(101)}{Enter}`)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Name is too long (maximum is 100 characters).')
+    expect(nameBox(0)).toHaveValue('x'.repeat(101))
+    await user.tab()
+    expect(sent).toHaveLength(1)
+    expect(queryClient.getQueryData(['task_lists'])).toContainEqual({ id: 4, name: 'Shopping List' })
+  })
+
+  it.each([
+    ['a server error', () => new HttpResponse(null, { status: 500 })],
+    ['a network error', () => HttpResponse.error()],
+  ])('shows a generic message after %s and keeps the text', async (_label, answer) => {
+    const user = userEvent.setup()
+    server.use(http.patch(`${API_BASE}/task_lists/:id`, answer), ...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, 'Groceries{Enter}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't rename the list. Try again.")
+    expect(nameBox(0)).toHaveValue('Groceries')
+  })
+
+  it('fetches the lists again, with no alert, when the list was deleted elsewhere (404)', async () => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        gets += 1
+        // After the first load, Shopping List has been deleted in another tab.
+        if (gets > 1) return HttpResponse.json({ task_lists: shopping.slice(1) })
+      }),
+      http.patch(`${API_BASE}/task_lists/:id`, () =>
+        HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+      ),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, 'Groceries{Enter}')
+
+    await waitFor(() => expect(nameBoxes()).toEqual(['Vertex Rim', 'Chores']))
+    expect(gets).toBe(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows a failed rename in the row when Confirm Lists closed the editor while it was saving', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:id`, async () => {
+        await g.wait()
+        return new HttpResponse(null, { status: 500 })
+      }),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, 'Groceries')
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+    expect(screen.getByRole('list', { name: 'Task lists' })).toBeInTheDocument()
+    g.open()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't rename the list. Try again.")
+    expect(rowNames()).toEqual(['Shopping List', 'Vertex Rim', 'Chores'])
+  })
+
+  it('shows a rename that succeeds after the editor has closed in the row', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    server.use(...taskListsHandlers(shopping))
+    recordRequests('patch', '/task_lists/:id', g.wait)
+    renderTasks()
+    await openEditor(user)
+
+    await retype(user, 0, 'Groceries')
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+    g.open()
+
+    expect(await screen.findByRole('button', { name: 'Groceries' })).toBeInTheDocument()
+  })
+})
