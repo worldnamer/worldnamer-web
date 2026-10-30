@@ -938,3 +938,184 @@ describe('renaming a list in the editor', () => {
     expect(await screen.findByRole('button', { name: 'Groceries' })).toBeInTheDocument()
   })
 })
+
+describe('reordering lists in the editor', () => {
+  const nameBoxes = () => screen.queryAllByRole('textbox', { name: 'List name' }).map((input) => (input as HTMLInputElement).value)
+  const arrow = (name: string) => screen.getByRole('button', { name })
+
+  async function openEditor(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('button', { name: 'Chores' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+  }
+
+  it('labels the arrows by list, and disables up on the first list and down on the last', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([...shopping, { id: 11, name: '' }]))
+    renderTasks()
+    await openEditor(user)
+
+    expect(arrow("Move 'Shopping List' up")).toBeDisabled()
+    expect(arrow("Move 'Shopping List' down")).toBeEnabled()
+    expect(arrow("Move 'Chores' up")).toBeEnabled()
+    expect(arrow('Move list up')).toBeEnabled()
+    expect(arrow('Move list down')).toBeDisabled()
+  })
+
+  it('moves a list down at once, sends the whole new order, and the row shows it after a reload', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('put', '/task_list_order', g.wait)
+    const { unmount } = renderTasks()
+    await openEditor(user)
+
+    await user.click(arrow("Move 'Shopping List' down"))
+
+    // Shown before the server answers.
+    expect(nameBoxes()).toEqual(['Vertex Rim', 'Shopping List', 'Chores'])
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toEqual({ path: '/api/v1/task_list_order', body: { ids: [2, 4, 9] }, auth: `Bearer ${REFRESH_TOKEN}` })
+    g.open()
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+    expect(rowNames()).toEqual(['Vertex Rim', 'Shopping List', 'Chores'])
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(rowNames()).toEqual(['Vertex Rim', 'Shopping List', 'Chores'])
+  })
+
+  it('keeps the selected list selected when it moves', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await user.click(await screen.findByRole('button', { name: 'Chores' }))
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+
+    await user.click(arrow("Move 'Chores' up"))
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+
+    expect(rowNames()).toEqual(['Shopping List', 'Chores', 'Vertex Rim'])
+    expect(pressed()).toEqual(['Chores'])
+  })
+
+  it('keeps focus on the arrow pressed while the list can still move that way', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(arrow("Move 'Shopping List' down"))
+
+    expect(nameBoxes()).toEqual(['Vertex Rim', 'Shopping List', 'Chores'])
+    expect(arrow("Move 'Shopping List' down")).toHaveFocus()
+  })
+
+  it('moves focus to the other arrow when the list reaches the top or the bottom', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    arrow("Move 'Vertex Rim' up").focus()
+    await user.keyboard('{Enter}')
+    expect(nameBoxes()).toEqual(['Vertex Rim', 'Shopping List', 'Chores'])
+    expect(arrow("Move 'Vertex Rim' up")).toBeDisabled()
+    expect(arrow("Move 'Vertex Rim' down")).toHaveFocus()
+
+    arrow("Move 'Shopping List' down").focus()
+    await user.keyboard('{Enter}')
+    expect(nameBoxes()).toEqual(['Vertex Rim', 'Chores', 'Shopping List'])
+    expect(arrow("Move 'Shopping List' up")).toHaveFocus()
+  })
+
+  it('sends quick moves to the server one at a time, in the order they were made', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    const order: string[] = []
+    server.use(
+      http.put(`${API_BASE}/task_list_order`, async ({ request }) => {
+        const { ids } = (await request.clone().json()) as { ids: number[] }
+        order.push(`arrived ${ids.join(',')}`)
+        if (order.length === 1) await g.wait()
+        order.push(`answered ${ids.join(',')}`)
+      }),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(arrow("Move 'Shopping List' down"))
+    await waitFor(() => expect(order).toEqual(['arrived 2,4,9']))
+    await user.click(arrow("Move 'Shopping List' down"))
+
+    // The second move shows at once, although its request waits behind the first.
+    expect(nameBoxes()).toEqual(['Vertex Rim', 'Chores', 'Shopping List'])
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(order).toEqual(['arrived 2,4,9'])
+
+    g.open()
+    await waitFor(() =>
+      expect(order).toEqual(['arrived 2,4,9', 'answered 2,4,9', 'arrived 2,9,4', 'answered 2,9,4']),
+    )
+  })
+
+  it.each([
+    ['a server error', () => new HttpResponse(null, { status: 500 })],
+    ['a network error', () => HttpResponse.error()],
+    [
+      'a 409 (the lists changed elsewhere)',
+      () =>
+        HttpResponse.json(errorBody('conflict', 'The lists have changed. Reload and try again.'), { status: 409 }),
+    ],
+  ])("shows an error after %s and fetches the server's order again", async (_label, answer) => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        gets += 1
+      }),
+      http.put(`${API_BASE}/task_list_order`, answer),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(arrow("Move 'Shopping List' down"))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save the new order. Try again.")
+    await waitFor(() => expect(gets).toBe(2))
+    await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores']))
+  })
+
+  it('fetches again only once, after the last of several failed moves', async () => {
+    const user = userEvent.setup()
+    const g = gate()
+    let gets = 0
+    let puts = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        gets += 1
+      }),
+      http.put(`${API_BASE}/task_list_order`, async () => {
+        puts += 1
+        if (puts === 1) await g.wait()
+        return new HttpResponse(null, { status: 500 })
+      }),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(arrow("Move 'Shopping List' down"))
+    await waitFor(() => expect(puts).toBe(1))
+    await user.click(arrow("Move 'Shopping List' down"))
+    g.open()
+
+    await waitFor(() => expect(puts).toBe(2))
+    await waitFor(() => expect(gets).toBe(2))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(gets).toBe(2)
+  })
+})

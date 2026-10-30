@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createTaskList, listTaskLists, renameTaskList } from './taskLists'
+import { createTaskList, listTaskLists, renameTaskList, reorderTaskLists } from './taskLists'
 
 beforeEach(() => {
   clearAccessToken()
@@ -79,5 +79,30 @@ describe('renameTaskList', () => {
   it('rejects with a 404 for a list that is gone', async () => {
     server.use(...taskListsHandlers([]))
     await expect(renameTaskList(4, 'Errands')).rejects.toMatchObject({ status: 404, code: 'not_found' })
+  })
+})
+
+describe('reorderTaskLists', () => {
+  it('sends PUT /task_list_order with the ids and resolves the lists in the new order', async () => {
+    let body: unknown = null
+    server.use(
+      http.put(`${API_BASE}/task_list_order`, async ({ request }) => {
+        body = await request.clone().json()
+      }),
+      ...taskListsHandlers([
+        { id: 1, name: 'Chores' },
+        { id: 2, name: 'Errands' },
+      ]),
+    )
+    await expect(reorderTaskLists([2, 1])).resolves.toEqual([
+      { id: 2, name: 'Errands' },
+      { id: 1, name: 'Chores' },
+    ])
+    expect(body).toEqual({ ids: [2, 1] })
+  })
+
+  it('rejects with a 409 when the ids are not exactly the lists', async () => {
+    server.use(...taskListsHandlers([{ id: 1, name: 'Chores' }, { id: 2, name: 'Errands' }]))
+    await expect(reorderTaskLists([2])).rejects.toMatchObject({ status: 409, code: 'conflict' })
   })
 })
