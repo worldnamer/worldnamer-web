@@ -198,7 +198,7 @@ export function TaskListRow({
               <TaskListNameInput
                 name="New List"
                 autoFocus
-                className="w-48"
+                className="w-48 focus-visible:ring-inset"
                 onSave={saveDraft}
                 onCancel={() => closeDraft(true)}
               />
