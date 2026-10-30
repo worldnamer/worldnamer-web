@@ -1,6 +1,7 @@
-import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { ArrowDownIcon, ArrowUpIcon, Trash2Icon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { TaskList } from '@/api/taskLists'
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
 import { isBlank } from '@/lib/taskListNames'
@@ -11,19 +12,21 @@ function quotedName(list: TaskList) {
   return isBlank(list.name) ? 'list' : `'${list.name}'`
 }
 
-// One list in the editor: its name box and its up and down arrows.
+// One list in the editor: its name box, its up and down arrows, and its delete button, which asks first.
 function EditorLine({
   list,
   index,
   count,
   onRename,
   onMove,
+  onAskToDelete,
 }: {
   list: TaskList
   index: number
   count: number
   onRename: (list: TaskList, text: string) => Promise<string | null>
   onMove: (list: TaskList, by: -1 | 1) => void
+  onAskToDelete: (list: TaskList, button: HTMLElement) => void
 }) {
   const upRef = useRef<HTMLButtonElement>(null)
   const downRef = useRef<HTMLButtonElement>(null)
@@ -74,6 +77,15 @@ function EditorLine({
       >
         <ArrowDownIcon />
       </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="text-muted-foreground hover:text-foreground"
+        aria-label={isBlank(list.name) ? 'Delete list' : `Delete ${list.name}`}
+        onClick={(event) => onAskToDelete(list, event.currentTarget)}
+      >
+        <Trash2Icon />
+      </Button>
     </li>
   )
 }
@@ -81,19 +93,33 @@ function EditorLine({
 // The editor that replaces the row: one line per list, in order, and a Confirm Lists button that goes back to the
 // row. Every change saves as it is made (a name on Enter or when focus leaves its box, an order on each arrow press),
 // so Confirm Lists saves nothing itself; pressing it moves focus off a name box, which saves that box. `onRename`
-// resolves the name as saved, or null.
+// resolves the name as saved, or null. A delete is confirmed in the shared dialog before `onDelete` is called.
 export function TaskListEditor({
   lists,
   onRename,
   onMove,
+  onDelete,
   onConfirm,
 }: {
   lists: TaskList[]
   onRename: (list: TaskList, text: string) => Promise<string | null>
   onMove: (list: TaskList, by: -1 | 1) => void
+  onDelete: (list: TaskList) => void
   onConfirm: () => void
 }) {
   const groupRef = useRef<HTMLDivElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  // The dialog is controlled: `open` shows it and `target` is the list it asks about. They are separate so the title
+  // keeps its text while the dialog fades out.
+  const [open, setOpen] = useState(false)
+  const [target, setTarget] = useState<TaskList | null>(null)
+  const opener = useRef<HTMLElement | null>(null) // the delete button that opened the dialog
+
+  function askToDelete(list: TaskList, button: HTMLElement) {
+    opener.current = button
+    setTarget(list)
+    setOpen(true)
+  }
 
   // The edit button that opened the editor has gone, so focus moves to the editor itself. Not to the first name box,
   // which on a phone would open the on-screen keyboard.
@@ -112,14 +138,26 @@ export function TaskListEditor({
             count={lists.length}
             onRename={onRename}
             onMove={onMove}
+            onAskToDelete={askToDelete}
           />
         ))}
       </ul>
       <div className="flex items-center justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onConfirm}>
+        <Button ref={confirmRef} variant="outline" size="sm" onClick={onConfirm}>
           Confirm Lists
         </Button>
       </div>
+      <ConfirmDeleteDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={target && !isBlank(target.name) ? `Delete '${target.name}'?` : 'Delete this list?'}
+        onConfirm={() => {
+          if (target) onDelete(target)
+        }}
+        // After a confirmed delete the list's own button is going away, so focus goes to Confirm Lists; after Cancel
+        // it goes back to the button that opened the dialog.
+        focusAfterClose={(confirmed) => (confirmed ? confirmRef.current : opener.current)}
+      />
     </div>
   )
 }

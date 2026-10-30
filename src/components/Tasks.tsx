@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import {
   createTaskList,
+  deleteTaskList,
   listTaskLists,
   renameTaskList,
   reorderTaskLists,
@@ -12,6 +13,7 @@ import {
 import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
 import { Button } from '@/components/ui/button'
+import { isBlank } from '@/lib/taskListNames'
 
 // The API's own message for a refused name (422), if it sent one.
 function refusal(error: Error) {
@@ -136,6 +138,18 @@ export function Tasks() {
     reorder.mutate(ids)
   }
 
+  const remove = useMutation({
+    mutationFn: (list: TaskList) => deleteTaskList(list.id),
+    onMutate: () => setError(null),
+    onSuccess: (_result, list) => {
+      queryClient.setQueryData<TaskList[]>(['task_lists'], (old) => old?.filter((l) => l.id !== list.id))
+      // Fetch again too, so a 404 (already deleted elsewhere) or another tab's changes show up.
+      void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+    },
+    onError: (_error, list) =>
+      setError(isBlank(list.name) ? "Couldn't delete this list. Try again." : `Couldn't delete '${list.name}'. Try again.`),
+  })
+
   return (
     <section aria-labelledby="tasks-heading" className="w-full lg:w-1/2">
       {/* min-h-10 matches the Habits heading row, whose icon buttons make it that tall. */}
@@ -172,7 +186,13 @@ export function Tasks() {
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
         {data && mode === 'editor' && (
-          <TaskListEditor lists={data} onRename={renameList} onMove={moveList} onConfirm={closeEditor} />
+          <TaskListEditor
+            lists={data}
+            onRename={renameList}
+            onMove={moveList}
+            onDelete={(list) => remove.mutate(list)}
+            onConfirm={closeEditor}
+          />
         )}
       </div>
     </section>

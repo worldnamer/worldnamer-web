@@ -219,5 +219,14 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
     return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
   })
 
-  return [list, create, rename, reorder]
+  // 204 for a list in the store, 404 for any other, including one already deleted.
+  const remove = http.delete(`${API_BASE}/task_lists/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = lists.findIndex((l) => String(l.id) === params.id)
+    if (index === -1) return notFound()
+    lists.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, rename, reorder, remove]
 }
