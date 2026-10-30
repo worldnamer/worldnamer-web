@@ -11,16 +11,7 @@ import {
   type Habit,
   type HabitWeek,
 } from '@/api/habits'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -252,7 +243,6 @@ export function Habits() {
   // keeps its text while the dialog fades out.
   const [open, setOpen] = useState(false)
   const [target, setTarget] = useState<Habit | null>(null)
-  const confirmed = useRef(false)
   const opener = useRef<HTMLElement | null>(null) // the row button that opened the dialog
   const [deletingIds, setDeletingIds] = useState<number[]>([])
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -305,7 +295,6 @@ export function Habits() {
   }
 
   function askToDelete(habit: Habit, button: HTMLElement) {
-    confirmed.current = false
     opener.current = button
     setTarget(habit)
     setOpen(true)
@@ -430,37 +419,17 @@ export function Habits() {
           </p>
         )}
       </div>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent
-          className="border-border bg-panel"
-          onCloseAutoFocus={(event) => {
-            // Radix only restores focus to a trigger, and this dialog has none, so do it here. After a confirmed delete
-            // the row's button is going away, so focus goes to the + button; after Cancel it goes back to the button.
-            event.preventDefault()
-            if (confirmed.current) plusRef.current?.focus()
-            else opener.current?.focus()
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-xl tracking-wide">
-              Delete '{target?.name}'?
-            </AlertDialogTitle>
-            <AlertDialogDescription>This can't be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                confirmed.current = true
-                if (target) remove.mutate(target)
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Delete '${target?.name}'?`}
+        onConfirm={() => {
+          if (target) remove.mutate(target)
+        }}
+        // After a confirmed delete the row's button is going away, so focus goes to the + button; after Cancel it goes
+        // back to the button that opened the dialog.
+        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
+      />
     </section>
   )
 }
