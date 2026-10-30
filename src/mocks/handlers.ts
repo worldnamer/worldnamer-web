@@ -164,5 +164,29 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
     return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
   })
 
-  return [list]
+  let nextId = Math.max(0, ...lists.map((l) => l.id)) + 1
+  const badRequest = () => HttpResponse.json(errorBody('bad_request', 'Request body is malformed.'), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Name is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Reads { task_list: { name } } as the API does: the name stripped, a missing one stored as "", over 100 characters
+  // refused with 422, and a body without task_list answered with 400. Returns the name or the error response.
+  async function nameFrom(request: Request): Promise<string | Response> {
+    const body = (await request.json()) as { task_list?: { name?: string | null } }
+    if (!body.task_list) return badRequest()
+    const name = (body.task_list.name ?? '').trim()
+    return [...name].length > 100 ? tooLong() : name
+  }
+
+  // Appends the list at the end, the way the API does.
+  const create = http.post(`${API_BASE}/task_lists`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    const created = { id: nextId++, name }
+    lists.push(created)
+    return HttpResponse.json({ task_list: created }, { status: 201 })
+  })
+
+  return [list, create]
 }
