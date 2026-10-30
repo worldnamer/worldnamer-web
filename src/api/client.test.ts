@@ -26,7 +26,7 @@ import { clearAccessToken, getAccessToken, setAccessToken } from '@/auth/tokenSt
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, REFRESH_TOKEN, refreshHandler, tokenBody } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
-import { apiFetch, refreshSession } from './client'
+import { apiFetch, fetchWithTimeout, REQUEST_TIMEOUT_MS, refreshSession } from './client'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -215,5 +215,64 @@ describe('refreshSession', () => {
     setSessionFlag()
     await expect(refreshSession()).resolves.toBeNull()
     expect(hasSessionFlag()).toBe(true)
+  })
+})
+
+describe('request timeout', () => {
+  const hang = () => new Promise<Response>(() => {})
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('rejects a request the API has not answered within the timeout', async () => {
+    vi.useFakeTimers()
+    server.use(http.get(`${API_BASE}/slow`, hang))
+    const outcome = fetchWithTimeout(`${API_BASE}/slow`).then(
+      () => 'resolved',
+      (error: unknown) => error,
+    )
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1)
+    let settled = false
+    void outcome.then(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await outcome).toMatchObject({ name: 'TimeoutError' })
+  })
+
+  it('applies to apiFetch', async () => {
+    vi.useFakeTimers()
+    server.use(http.get(`${API_BASE}/slow`, hang))
+    const outcome = apiFetch('/slow').then(
+      () => 'resolved',
+      () => 'rejected',
+    )
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS)
+    expect(await outcome).toBe('rejected')
+  })
+
+  it('leaves no timer behind after a normal request', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'))
+    const response = await fetchWithTimeout(`${API_BASE}/fast`)
+    expect(response.status).toBe(200)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('still honours a signal the caller passes', async () => {
+    server.use(http.get(`${API_BASE}/slow`, hang))
+    const controller = new AbortController()
+    const outcome = fetchWithTimeout(`${API_BASE}/slow`, { signal: controller.signal })
+    controller.abort(new Error('caller gave up'))
+    await expect(outcome).rejects.toThrow('caller gave up')
+  })
+
+  it('rejects at once when the caller signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('already'))
+    await expect(fetchWithTimeout(`${API_BASE}/fast`, { signal: controller.signal })).rejects.toThrow('already')
   })
 })
