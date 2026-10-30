@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { PencilIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import { createTaskList, listTaskLists, type TaskList } from '@/api/taskLists'
+import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
+import { Button } from '@/components/ui/button'
 
 // The API's own message for a refused name (422), if it sent one.
 function refusal(error: Error) {
@@ -28,6 +31,23 @@ export function Tasks() {
   const selected = data?.find((l) => l.id === selectedId) ?? data?.[0]
   // The card's one error line for a failed save. It is cleared when the next save starts.
   const [error, setError] = useState<string | null>(null)
+  // The row, or the editor in its place. Both read the same query, so switching sends no request.
+  const [mode, setMode] = useState<'row' | 'editor'>('row')
+  const editRef = useRef<HTMLButtonElement>(null)
+  const refocusEdit = useRef(false)
+
+  // Confirm Lists goes away with the editor, so focus goes back to the edit button that opened it.
+  useEffect(() => {
+    if (mode === 'row' && refocusEdit.current) {
+      refocusEdit.current = false
+      editRef.current?.focus()
+    }
+  }, [mode])
+
+  function closeEditor() {
+    refocusEdit.current = true
+    setMode('row')
+  }
 
   const create = useMutation({
     mutationFn: createTaskList,
@@ -49,6 +69,18 @@ export function Tasks() {
         <h2 id="tasks-heading" className="font-display text-xl tracking-wide">
           Tasks
         </h2>
+        {mode === 'row' && (
+          <Button
+            ref={editRef}
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Edit lists"
+            disabled={!data}
+            onClick={() => setMode('editor')}
+          >
+            <PencilIcon />
+          </Button>
+        )}
       </div>
       {error !== null && (
         <p role="alert" className="pt-2 text-sm text-destructive">
@@ -62,9 +94,10 @@ export function Tasks() {
             Couldn't load your lists. Try reloading the page.
           </p>
         )}
-        {data && (
+        {data && mode === 'row' && (
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
+        {data && mode === 'editor' && <TaskListEditor lists={data} onConfirm={closeEditor} />}
       </div>
     </section>
   )
