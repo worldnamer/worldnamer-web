@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PencilIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
-import { createTaskList, listTaskLists, renameTaskList, type TaskList } from '@/api/taskLists'
+import {
+  createTaskList,
+  listTaskLists,
+  renameTaskList,
+  reorderTaskLists,
+  type TaskList,
+} from '@/api/taskLists'
 import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
 import { Button } from '@/components/ui/button'
@@ -88,6 +94,48 @@ export function Tasks() {
     )
   }
 
+  // Set when a move fails, so the lists are fetched again once the last move has settled.
+  const moveFailed = useRef(false)
+
+  const reorder = useMutation({
+    mutationKey: ['task_list_order'],
+    // Moves with the same scope run one after another, in order, so quick clicks reach the server in the order they
+    // were made. A queued move still runs onMutate at once, so it shows straight away.
+    scope: { id: 'task_list_order' },
+    mutationFn: reorderTaskLists,
+    onMutate: async (ids) => {
+      setError(null)
+      // Cancel a fetch in flight first, so its older answer cannot overwrite the order shown below.
+      await queryClient.cancelQueries({ queryKey: ['task_lists'] })
+      queryClient.setQueryData<TaskList[]>(['task_lists'], (old) =>
+        old ? ids.flatMap((id) => old.filter((l) => l.id === id)) : old,
+      )
+    },
+    onError: () => {
+      moveFailed.current = true
+      setError("Couldn't save the new order. Try again.")
+    },
+    onSettled: () => {
+      // On success the order shown is already the server's. After a failure (including a 409, when the lists changed
+      // elsewhere) the request may or may not have landed, so once the last move in flight settles (this one still
+      // counts) the lists are fetched again to show the server's order.
+      if (moveFailed.current && queryClient.isMutating({ mutationKey: ['task_list_order'] }) === 1) {
+        moveFailed.current = false
+        void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+      }
+    },
+  })
+
+  // Swaps a list with its neighbour above (-1) or below (1), and saves the whole new order.
+  function moveList(list: TaskList, by: -1 | 1) {
+    const ids = (queryClient.getQueryData<TaskList[]>(['task_lists']) ?? []).map((l) => l.id)
+    const from = ids.indexOf(list.id)
+    const to = from + by
+    if (from === -1 || to < 0 || to >= ids.length) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    reorder.mutate(ids)
+  }
+
   return (
     <section aria-labelledby="tasks-heading" className="w-full lg:w-1/2">
       {/* min-h-10 matches the Habits heading row, whose icon buttons make it that tall. */}
@@ -123,7 +171,9 @@ export function Tasks() {
         {data && mode === 'row' && (
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
-        {data && mode === 'editor' && <TaskListEditor lists={data} onRename={renameList} onConfirm={closeEditor} />}
+        {data && mode === 'editor' && (
+          <TaskListEditor lists={data} onRename={renameList} onMove={moveList} onConfirm={closeEditor} />
+        )}
       </div>
     </section>
   )

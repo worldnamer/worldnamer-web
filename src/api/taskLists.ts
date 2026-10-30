@@ -36,3 +36,17 @@ export async function renameTaskList(id: number, name: string): Promise<TaskList
   const body = (await response.json()) as { task_list: TaskList }
   return body.task_list
 }
+
+// PUT /task_list_order saves the order of all the user's lists, given as their ids, first to last. Resolves the lists
+// in the new order. Rejects with an ApiError otherwise; a 409 means the ids are not exactly the user's lists (one was
+// added or deleted elsewhere), and nothing was changed.
+export async function reorderTaskLists(ids: number[]): Promise<TaskList[]> {
+  const response = await apiFetch('/task_list_order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { task_lists: TaskList[] }
+  return body.task_lists
+}

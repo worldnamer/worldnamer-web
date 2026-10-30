@@ -202,5 +202,22 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
     return HttpResponse.json({ task_list: { id: found.id, name: found.name } })
   })
 
-  return [list, create, rename]
+  // Puts the lists in the order of `ids`, which must be exactly the ids in the store: anything else gets the API's 409,
+  // and ids that are missing, empty or not integers get 400.
+  const reorder = http.put(`${API_BASE}/task_list_order`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const body = (await request.json()) as { ids?: unknown }
+    const ids = body.ids
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => Number.isInteger(id))) return badRequest()
+    const current = lists.map((l) => l.id)
+    const same = ids.length === current.length && new Set(ids).size === ids.length && ids.every((id) => current.includes(id))
+    if (!same) {
+      return HttpResponse.json(errorBody('conflict', 'The lists have changed. Reload and try again.'), { status: 409 })
+    }
+    const ordered = (ids as number[]).map((id) => findList(String(id))!)
+    lists.splice(0, lists.length, ...ordered)
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  return [list, create, rename, reorder]
 }
