@@ -191,6 +191,7 @@ export function Tasks() {
             onRename={renameList}
             onMove={moveList}
             onDelete={(list) => remove.mutate(list)}
+            onAdd={addList}
             onConfirm={closeEditor}
           />
         )}
