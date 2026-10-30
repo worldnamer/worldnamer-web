@@ -1196,8 +1196,8 @@ describe('deleting a list in the editor', () => {
 
     await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Chores']))
     expect(sent).toEqual([{ path: '/api/v1/task_lists/2', body: null, auth: `Bearer ${REFRESH_TOKEN}` }])
-    // The list's own delete button has gone.
-    expect(screen.getByRole('button', { name: 'Confirm Lists' })).toHaveFocus()
+    // The list's own delete button has gone, so focus goes to the editor's +.
+    expect(screen.getByRole('button', { name: 'Add list' })).toHaveFocus()
 
     unmount()
     queryClient.clear()
@@ -1282,5 +1282,107 @@ describe('deleting a list in the editor', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(nameBoxes()).toEqual(['Shopping List', name])
+  })
+})
+
+describe("adding a list from the editor's +", () => {
+  const plus = () => screen.getByRole('button', { name: 'Add list' })
+  const nameBoxes = () => screen.queryAllByRole('textbox', { name: 'List name' }).map((input) => (input as HTMLInputElement).value)
+  const lastNameBox = () => screen.getAllByRole('textbox', { name: 'List name' }).at(-1) as HTMLInputElement
+
+  async function openEditor(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('button', { name: 'Chores' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+  }
+
+  it('opens a box after the last list holding "New List", focused and selected, and disables +', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(plus())
+
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores', 'New List'])
+    expect(lastNameBox()).toHaveFocus()
+    expect([lastNameBox().selectionStart, lastNameBox().selectionEnd]).toEqual([0, 'New List'.length])
+    expect(plus()).toBeDisabled()
+  })
+
+  it('saves on Enter: the list joins the editor with its arrows, and focus returns to +', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('post', '/task_lists')
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(plus())
+    await user.keyboard('Groceries{Enter}')
+
+    expect(await screen.findByRole('button', { name: "Move 'Groceries' up" })).toBeInTheDocument()
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores', 'Groceries'])
+    expect(sent.map((r) => r.body)).toEqual([{ task_list: { name: 'Groceries' } }])
+    expect(plus()).toBeEnabled()
+    expect(plus()).toHaveFocus()
+  })
+
+  it('saves the box when Confirm Lists is pressed while it has focus, and the row shows the list selected', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('post', '/task_lists')
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(plus())
+    await user.keyboard('Groceries')
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+
+    expect(await screen.findByRole('button', { name: 'Groceries', pressed: true })).toBeInTheDocument()
+    expect(rowNames()).toEqual(['Shopping List', 'Vertex Rim', 'Chores', 'Groceries'])
+    expect(sent).toHaveLength(1)
+  })
+
+  it('cancels with Escape: sends nothing and returns focus to +', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('post', '/task_lists')
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(plus())
+    await user.keyboard('Groceries{Escape}')
+
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores'])
+    expect(plus()).toHaveFocus()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
+  })
+
+  it('works with no lists yet', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([]))
+    renderTasks()
+    await screen.findByRole('list', { name: 'Task lists' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+
+    await user.click(plus())
+    await user.keyboard('Groceries{Enter}')
+
+    expect(await screen.findByRole('button', { name: "Move 'Groceries' up" })).toBeDisabled()
+    expect(screen.getByRole('button', { name: "Move 'Groceries' down" })).toBeDisabled()
+  })
+
+  it('keeps the box and its text and shows the error after a failure', async () => {
+    const user = userEvent.setup()
+    server.use(http.post(`${API_BASE}/task_lists`, () => new HttpResponse(null, { status: 500 })), ...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    await user.click(plus())
+    await user.keyboard('Groceries{Enter}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't add the list. Try again.")
+    expect(lastNameBox()).toHaveValue('Groceries')
+    expect(plus()).toBeDisabled()
   })
 })

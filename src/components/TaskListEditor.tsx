@@ -1,4 +1,4 @@
-import { ArrowDownIcon, ArrowUpIcon, Trash2Icon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { TaskList } from '@/api/taskLists'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
@@ -94,26 +94,54 @@ function EditorLine({
 // row. Every change saves as it is made (a name on Enter or when focus leaves its box, an order on each arrow press),
 // so Confirm Lists saves nothing itself; pressing it moves focus off a name box, which saves that box. `onRename`
 // resolves the name as saved, or null. A delete is confirmed in the shared dialog before `onDelete` is called.
+//
+// The + opens a box at the end of the editor holding "New List", selected so typing replaces it, and saved like a
+// name (Enter or focus leaving, including by pressing Confirm Lists). `onAdd` resolves the new list, or null.
 export function TaskListEditor({
   lists,
   onRename,
   onMove,
   onDelete,
+  onAdd,
   onConfirm,
 }: {
   lists: TaskList[]
   onRename: (list: TaskList, text: string) => Promise<string | null>
   onMove: (list: TaskList, by: -1 | 1) => void
   onDelete: (list: TaskList) => void
+  onAdd: (name: string) => Promise<TaskList | null>
   onConfirm: () => void
 }) {
   const groupRef = useRef<HTMLDivElement>(null)
-  const confirmRef = useRef<HTMLButtonElement>(null)
+  const plusRef = useRef<HTMLButtonElement>(null)
+  const [drafting, setDrafting] = useState(false)
+  const refocusPlus = useRef(false)
   // The dialog is controlled: `open` shows it and `target` is the list it asks about. They are separate so the title
   // keeps its text while the dialog fades out.
   const [open, setOpen] = useState(false)
   const [target, setTarget] = useState<TaskList | null>(null)
   const opener = useRef<HTMLElement | null>(null) // the delete button that opened the dialog
+
+  // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
+  useEffect(() => {
+    if (!drafting && refocusPlus.current) {
+      refocusPlus.current = false
+      plusRef.current?.focus()
+    }
+  }, [drafting])
+
+  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
+  function closeDraft(refocus: boolean) {
+    refocusPlus.current = refocus
+    setDrafting(false)
+  }
+
+  async function saveDraft(text: string, viaEnter: boolean) {
+    const list = await onAdd(text)
+    if (list === null) return null
+    closeDraft(viaEnter)
+    return list.name
+  }
 
   function askToDelete(list: TaskList, button: HTMLElement) {
     opener.current = button
@@ -141,9 +169,30 @@ export function TaskListEditor({
             onAskToDelete={askToDelete}
           />
         ))}
+        {drafting && (
+          <li className="flex items-center gap-1">
+            <TaskListNameInput
+              name="New List"
+              autoFocus
+              className="min-w-0 flex-1"
+              onSave={saveDraft}
+              onCancel={() => closeDraft(true)}
+            />
+          </li>
+        )}
       </ul>
-      <div className="flex items-center justify-end gap-2">
-        <Button ref={confirmRef} variant="outline" size="sm" onClick={onConfirm}>
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          ref={plusRef}
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Add list"
+          disabled={drafting}
+          onClick={() => setDrafting(true)}
+        >
+          <PlusIcon />
+        </Button>
+        <Button variant="outline" size="sm" onClick={onConfirm}>
           Confirm Lists
         </Button>
       </div>
@@ -154,9 +203,9 @@ export function TaskListEditor({
         onConfirm={() => {
           if (target) onDelete(target)
         }}
-        // After a confirmed delete the list's own button is going away, so focus goes to Confirm Lists; after Cancel
-        // it goes back to the button that opened the dialog.
-        focusAfterClose={(confirmed) => (confirmed ? confirmRef.current : opener.current)}
+        // After a confirmed delete the list's own button is going away, so focus goes to the +; after Cancel it goes
+        // back to the button that opened the dialog.
+        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
       />
     </div>
   )
