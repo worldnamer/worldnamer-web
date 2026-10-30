@@ -1,6 +1,7 @@
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { TaskList } from '@/api/taskLists'
+import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
 import { accessibleListName, isBlank, rowName } from '@/lib/taskListNames'
 import { cn } from '@/lib/utils'
@@ -59,14 +60,19 @@ function startShowing(boxes: HTMLElement[], box: HTMLElement, width: number) {
 //
 // When the boxes do not fit, the row scrolls sideways with no visible scrollbar, snapping to whole boxes. A chevron
 // button appears at each end that has boxes hidden past it; touch and trackpad scrolling still work too.
+//
+// The + after the row opens a box at the end of it holding "New List", selected so typing replaces it. `onAdd` saves
+// it and resolves the new list, or null if that failed (the card shows why).
 export function TaskListRow({
   lists,
   selectedId,
   onSelect,
+  onAdd,
 }: {
   lists: TaskList[]
   selectedId: number | null
   onSelect: (id: number) => void
+  onAdd: (name: string) => Promise<TaskList | null>
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -76,6 +82,30 @@ export function TaskListRow({
   // The chevron last pressed, so that if it disappears under the keyboard focus (the row reached that end), focus can
   // move to the other chevron rather than being lost.
   const pressedChevron = useRef<'left' | 'right' | null>(null)
+  const plusRef = useRef<HTMLButtonElement>(null)
+  const [drafting, setDrafting] = useState(false)
+  const refocusPlus = useRef(false)
+
+  // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
+  useEffect(() => {
+    if (!drafting && refocusPlus.current) {
+      refocusPlus.current = false
+      plusRef.current?.focus()
+    }
+  }, [drafting])
+
+  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
+  function closeDraft(refocus: boolean) {
+    refocusPlus.current = refocus
+    setDrafting(false)
+  }
+
+  async function saveDraft(text: string, viaEnter: boolean) {
+    const list = await onAdd(text)
+    if (list === null) return null
+    closeDraft(viaEnter)
+    return list.name
+  }
 
   // A chevron pages the row: Right brings the first box cut off on the right to the left edge, and Left shows the last
   // box cut off on the left whole at the right edge. The scroller's motion-safe:scroll-smooth animates it.
@@ -163,6 +193,17 @@ export function TaskListRow({
               </li>
             )
           })}
+          {drafting && (
+            <li className="shrink-0 snap-start">
+              <TaskListNameInput
+                name="New List"
+                autoFocus
+                className="w-48"
+                onSave={saveDraft}
+                onCancel={() => closeDraft(true)}
+              />
+            </li>
+          )}
         </ul>
       </div>
       {edges.right && (
@@ -176,6 +217,16 @@ export function TaskListRow({
           <ChevronRightIcon />
         </Button>
       )}
+      <Button
+        ref={plusRef}
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Add list"
+        disabled={drafting}
+        onClick={() => setDrafting(true)}
+      >
+        <PlusIcon />
+      </Button>
     </div>
   )
 }

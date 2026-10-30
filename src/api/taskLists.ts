@@ -10,3 +10,16 @@ export async function listTaskLists(): Promise<TaskList[]> {
   const body = (await response.json()) as { task_lists: TaskList[] }
   return body.task_lists
 }
+
+// POST /task_lists. Resolves the created list, which the API puts last; the name comes back with surrounding spaces
+// stripped, and a blank name is allowed. A 422 rejects with an ApiError whose serverMessage says what is wrong.
+export async function createTaskList(name: string): Promise<TaskList> {
+  const response = await apiFetch('/task_lists', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_list: { name } }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { task_list: TaskList }
+  return body.task_list
+}

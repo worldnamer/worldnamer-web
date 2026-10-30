@@ -1,9 +1,10 @@
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
+import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
-import { listTaskLists } from './taskLists'
+import { ApiError } from './client'
+import { createTaskList, listTaskLists } from './taskLists'
 
 beforeEach(() => {
   clearAccessToken()
@@ -32,5 +33,32 @@ describe('listTaskLists', () => {
   it('rejects with an ApiError on a 500', async () => {
     server.use(http.get(`${API_BASE}/task_lists`, () => new HttpResponse(null, { status: 500 })))
     await expect(listTaskLists()).rejects.toMatchObject({ status: 500 })
+  })
+})
+
+describe('createTaskList', () => {
+  it('sends the name as JSON and resolves the created list', async () => {
+    let body: unknown = null
+    server.use(
+      http.post(`${API_BASE}/task_lists`, async ({ request }) => {
+        body = await request.clone().json()
+      }),
+      ...taskListsHandlers([{ id: 4, name: 'Chores' }]),
+    )
+    await expect(createTaskList(' Groceries ')).resolves.toEqual({ id: 5, name: 'Groceries' })
+    expect(body).toEqual({ task_list: { name: ' Groceries ' } })
+  })
+
+  it('rejects with the status, code and message of a 422', async () => {
+    server.use(
+      http.post(`${API_BASE}/task_lists`, () =>
+        HttpResponse.json(errorBody('validation_failed', 'Name is too long (maximum is 100 characters).'), {
+          status: 422,
+        }),
+      ),
+    )
+    const error = await createTaskList('x').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 422, serverMessage: 'Name is too long (maximum is 100 characters).' })
   })
 })
