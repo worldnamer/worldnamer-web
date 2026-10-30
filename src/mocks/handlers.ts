@@ -151,3 +151,82 @@ export function habitsHandlers(initial: MockHabit[] = []) {
 
   return [list, create, remove, tick, untick]
 }
+
+// The task lists. taskListsHandlers(initial) keeps one in-memory list, in its saved order, that its handlers share, so
+// a change shows up in the next GET. Opt-in like the others: server.use(...taskListsHandlers([...])).
+export type MockTaskList = { id: number; name: string }
+
+export function taskListsHandlers(initial: MockTaskList[] = []) {
+  const lists = initial.map((l) => ({ id: l.id, name: l.name }))
+
+  const list = http.get(`${API_BASE}/task_lists`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  let nextId = Math.max(0, ...lists.map((l) => l.id)) + 1
+  const badRequest = () => HttpResponse.json(errorBody('bad_request', 'Request body is malformed.'), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Name is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Reads { task_list: { name } } as the API does: the name stripped, a missing one stored as "", over 100 characters
+  // refused with 422, and a body without task_list answered with 400. Returns the name or the error response.
+  async function nameFrom(request: Request): Promise<string | Response> {
+    const body = (await request.json()) as { task_list?: { name?: string | null } }
+    if (!body.task_list) return badRequest()
+    const name = (body.task_list.name ?? '').trim()
+    return [...name].length > 100 ? tooLong() : name
+  }
+
+  // Appends the list at the end, the way the API does.
+  const create = http.post(`${API_BASE}/task_lists`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    const created = { id: nextId++, name }
+    lists.push(created)
+    return HttpResponse.json({ task_list: created }, { status: 201 })
+  })
+
+  // Renames a list in the store; any other id gets the API's 404, as a missing list or someone else's does.
+  const findList = (id: unknown) => lists.find((l) => String(l.id) === id)
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+  const rename = http.patch(`${API_BASE}/task_lists/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = findList(params.id)
+    if (!found) return notFound()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    found.name = name
+    return HttpResponse.json({ task_list: { id: found.id, name: found.name } })
+  })
+
+  // Puts the lists in the order of `ids`, which must be exactly the ids in the store: anything else gets the API's 409,
+  // and ids that are missing, empty or not integers get 400.
+  const reorder = http.put(`${API_BASE}/task_list_order`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const body = (await request.json()) as { ids?: unknown }
+    const ids = body.ids
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => Number.isInteger(id))) return badRequest()
+    const current = lists.map((l) => l.id)
+    const same = ids.length === current.length && new Set(ids).size === ids.length && ids.every((id) => current.includes(id))
+    if (!same) {
+      return HttpResponse.json(errorBody('conflict', 'The lists have changed. Reload and try again.'), { status: 409 })
+    }
+    const ordered = (ids as number[]).map((id) => findList(String(id))!)
+    lists.splice(0, lists.length, ...ordered)
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  // 204 for a list in the store, 404 for any other, including one already deleted.
+  const remove = http.delete(`${API_BASE}/task_lists/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = lists.findIndex((l) => String(l.id) === params.id)
+    if (index === -1) return notFound()
+    lists.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, rename, reorder, remove]
+}
