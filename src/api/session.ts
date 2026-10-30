@@ -1,11 +1,11 @@
 import { clearSessionFlag, hasSessionFlag, setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { API_BASE, ApiError, refreshSession, type SessionUser } from './client'
+import { API_BASE, ApiError, fetchWithTimeout, refreshSession, type SessionUser } from './client'
 
 // POST /session. Rejects with ApiError on a non-2xx answer; a network error rejects with whatever fetch threw.
 export async function login(username: string, password: string): Promise<SessionUser> {
-  const response = await fetch(`${API_BASE}/session`, {
+  const response = await fetchWithTimeout(`${API_BASE}/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -30,7 +30,7 @@ export function restoreSession(): Promise<SessionUser | null> {
 // DELETE /session. The server call is best effort: whatever happens, this browser forgets the session.
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${API_BASE}/session`, { method: 'DELETE', credentials: 'include' })
+    await fetchWithTimeout(`${API_BASE}/session`, { method: 'DELETE', credentials: 'include' })
   } catch {
     // Ignored on purpose; see above.
   }
