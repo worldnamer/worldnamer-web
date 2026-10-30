@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createTaskList, listTaskLists, renameTaskList, reorderTaskLists } from './taskLists'
+import { createTaskList, deleteTaskList, listTaskLists, renameTaskList, reorderTaskLists } from './taskLists'
 
 beforeEach(() => {
   clearAccessToken()
@@ -104,5 +104,17 @@ describe('reorderTaskLists', () => {
   it('rejects with a 409 when the ids are not exactly the lists', async () => {
     server.use(...taskListsHandlers([{ id: 1, name: 'Chores' }, { id: 2, name: 'Errands' }]))
     await expect(reorderTaskLists([2])).rejects.toMatchObject({ status: 409, code: 'conflict' })
+  })
+})
+
+describe('deleteTaskList', () => {
+  it.each([204, 404])('resolves on %i', async (status) => {
+    server.use(http.delete(`${API_BASE}/task_lists/9`, () => new HttpResponse(null, { status })))
+    await expect(deleteTaskList(9)).resolves.toBeUndefined()
+  })
+
+  it('rejects with an ApiError on a 500', async () => {
+    server.use(http.delete(`${API_BASE}/task_lists/9`, () => new HttpResponse(null, { status: 500 })))
+    await expect(deleteTaskList(9)).rejects.toMatchObject({ status: 500 })
   })
 })

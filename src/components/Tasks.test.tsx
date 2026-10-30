@@ -1119,3 +1119,168 @@ describe('reordering lists in the editor', () => {
     expect(gets).toBe(2)
   })
 })
+
+describe('deleting a list in the editor', () => {
+  const nameBoxes = () => screen.queryAllByRole('textbox', { name: 'List name' }).map((input) => (input as HTMLInputElement).value)
+
+  async function openEditor(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('button', { name: 'Chores' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+  }
+
+  async function askToDelete(user: ReturnType<typeof userEvent.setup>, button: string, title: string) {
+    await user.click(screen.getByRole('button', { name: button }))
+    return screen.findByRole('alertdialog', { name: title })
+  }
+
+  it("asks first, in the shared dialog titled \"Delete 'Chores'?\"", async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+
+    expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('names a blank list\'s button "Delete list" and asks "Delete this list?", with no empty quotes', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([...shopping, { id: 11, name: '' }]))
+    renderTasks()
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete list', 'Delete this list?')
+
+    expect(dialog).not.toHaveTextContent("''")
+  })
+
+  it('uses the full name in the dialog title, however long', async () => {
+    const user = userEvent.setup()
+    const name = 'x'.repeat(100)
+    server.use(...taskListsHandlers([{ id: 1, name }, { id: 2, name: 'Chores' }]))
+    renderTasks()
+    await openEditor(user)
+
+    expect(await askToDelete(user, `Delete ${name}`, `Delete '${name}'?`)).toBeInTheDocument()
+  })
+
+  it('changes nothing on Cancel, and returns focus to the delete button', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('delete', '/task_lists/:id')
+    renderTasks()
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(sent).toEqual([])
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores'])
+    // Radix hands focus back on the next tick.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Chores' })).toHaveFocus())
+  })
+
+  it('sends DELETE /task_lists/<id> on confirm, the list goes, and it stays gone after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    const sent = recordRequests('delete', '/task_lists/:id')
+    const { unmount } = renderTasks()
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Vertex Rim', "Delete 'Vertex Rim'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Chores']))
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/2', body: null, auth: `Bearer ${REFRESH_TOKEN}` }])
+    // The list's own delete button has gone.
+    expect(screen.getByRole('button', { name: 'Confirm Lists' })).toHaveFocus()
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(rowNames()).toEqual(['Shopping List', 'Chores'])
+  })
+
+  it('selects the first remaining list when the selected one is deleted', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await user.click(await screen.findByRole('button', { name: 'Chores' }))
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim']))
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+
+    expect(pressed()).toEqual(['Shopping List'])
+  })
+
+  it('keeps the selection when another list is deleted', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await user.click(await screen.findByRole('button', { name: 'Chores' }))
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+
+    const dialog = await askToDelete(user, 'Delete Shopping List', "Delete 'Shopping List'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(nameBoxes()).toEqual(['Vertex Rim', 'Chores']))
+    await user.click(screen.getByRole('button', { name: 'Confirm Lists' }))
+
+    expect(pressed()).toEqual(['Chores'])
+  })
+
+  it('treats a 404 as success: the list goes, the lists are fetched again, and there is no alert', async () => {
+    const user = userEvent.setup()
+    let gets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        gets += 1
+        // After the first load, the server no longer has Chores (deleted in another tab).
+        if (gets > 1) return HttpResponse.json({ task_lists: shopping.slice(0, 2) })
+      }),
+      http.delete(`${API_BASE}/task_lists/:id`, () =>
+        HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+      ),
+      ...taskListsHandlers(shopping),
+    )
+    renderTasks()
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim']))
+    await waitFor(() => expect(gets).toBe(2))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['Chores', 'Delete Chores', "Delete 'Chores'?", "Couldn't delete 'Chores'. Try again."],
+    ['', 'Delete list', 'Delete this list?', "Couldn't delete this list. Try again."],
+  ])('shows an error and keeps the list %j after a 500', async (name, button, title, message) => {
+    const user = userEvent.setup()
+    server.use(
+      http.delete(`${API_BASE}/task_lists/:id`, () => new HttpResponse(null, { status: 500 })),
+      ...taskListsHandlers([
+        { id: 1, name: 'Shopping List' },
+        { id: 9, name },
+      ]),
+    )
+    renderTasks()
+    await screen.findByRole('button', { name: 'Shopping List' })
+    await user.click(screen.getByRole('button', { name: 'Edit lists' }))
+
+    const dialog = await askToDelete(user, button, title)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(nameBoxes()).toEqual(['Shopping List', name])
+  })
+})

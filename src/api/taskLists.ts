@@ -50,3 +50,10 @@ export async function reorderTaskLists(ids: number[]): Promise<TaskList[]> {
   const body = (await response.json()) as { task_lists: TaskList[] }
   return body.task_lists
 }
+
+// DELETE /task_lists/:id. Resolves on 204 and also on 404: a list that is already gone (deleted in another tab) is
+// what was wanted.
+export async function deleteTaskList(id: number): Promise<void> {
+  const response = await apiFetch(`/task_lists/${id}`, { method: 'DELETE' })
+  if (!response.ok && response.status !== 404) throw await apiErrorFrom(response)
+}
