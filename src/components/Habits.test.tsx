@@ -893,18 +893,16 @@ describe('ticking a day', () => {
     expect(box('Stretch, Friday, October 30').closest('td')).toHaveClass('outline-destructive')
   })
 
-  it('treats a 404 as success: no alert and no refetch', async () => {
+  it('fetches the grid again at once when the habit was deleted elsewhere: the row goes and there is no alert', async () => {
     const user = userEvent.setup()
     let gets = 0
-    let puts = 0
     server.use(
       http.get(`${API_BASE}/habits`, () => {
         gets += 1
+        // After the first load the habit has been deleted in another tab.
+        if (gets > 1) return HttpResponse.json({ habits: [{ id: 3, name: 'Drink water', completed_dates: [] }] })
       }),
-      http.put(completionPath, () => {
-        puts += 1
-        return HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })
-      }),
+      http.put(completionPath, () => HttpResponse.json(errorBody('not_found', 'Habit not found.'), { status: 404 })),
       ...habitsHandlers([{ id: 3, name: 'Drink water' }, stretch]),
     )
     renderHabits()
@@ -912,11 +910,11 @@ describe('ticking a day', () => {
 
     await user.click(box(wednesday))
 
-    await waitFor(() => expect(puts).toBe(1))
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(gets).toBe(1)
+    await waitFor(() => expect(names()).toEqual(['Drink water']))
+    expect(gets).toBe(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
 })
 
 describe('moving between weeks', () => {

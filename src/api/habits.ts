@@ -29,15 +29,22 @@ export async function createHabit(name: string): Promise<Habit> {
 }
 
 // PUT /habits/:habitId/completions/:date ticks the day; DELETE unticks it. Both are idempotent and send no body. They
-// resolve on 204 and also on 404: the habit is already gone (another tab), and the refetch that follows removes it.
-export async function putCompletion(habitId: number, date: string): Promise<void> {
-  const response = await apiFetch(`/habits/${habitId}/completions/${date}`, { method: 'PUT' })
-  if (!response.ok && response.status !== 404) throw await apiErrorFrom(response)
+// resolve 'saved' on 204. A 404 is not an error to show: the habit was deleted elsewhere (another tab), so they resolve
+// 'habit_gone' and the caller refetches to drop the row.
+export type CompletionResult = 'saved' | 'habit_gone'
+
+async function completionResult(response: Response): Promise<CompletionResult> {
+  if (response.ok) return 'saved'
+  if (response.status === 404) return 'habit_gone'
+  throw await apiErrorFrom(response)
 }
 
-export async function deleteCompletion(habitId: number, date: string): Promise<void> {
-  const response = await apiFetch(`/habits/${habitId}/completions/${date}`, { method: 'DELETE' })
-  if (!response.ok && response.status !== 404) throw await apiErrorFrom(response)
+export async function putCompletion(habitId: number, date: string): Promise<CompletionResult> {
+  return completionResult(await apiFetch(`/habits/${habitId}/completions/${date}`, { method: 'PUT' }))
+}
+
+export async function deleteCompletion(habitId: number, date: string): Promise<CompletionResult> {
+  return completionResult(await apiFetch(`/habits/${habitId}/completions/${date}`, { method: 'DELETE' }))
 }
 
 // DELETE /habits/:id. Resolves on 204 and also on 404: a habit that is already gone (another tab) is what was wanted.
