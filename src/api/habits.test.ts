@@ -98,9 +98,14 @@ describe.each([
     expect(sent).toEqual([{ method, auth: `Bearer ${REFRESH_TOKEN}`, body: '' }])
   })
 
-  it.each([204, 404])('resolves on %i (a 404 means the habit is already gone)', async (status) => {
-    server.use(handler(path, () => new HttpResponse(null, { status })))
-    await expect(send(7, '2026-10-28')).resolves.toBeUndefined()
+  it('resolves "saved" on a 204', async () => {
+    server.use(handler(path, () => new HttpResponse(null, { status: 204 })))
+    await expect(send(7, '2026-10-28')).resolves.toBe('saved')
+  })
+
+  it('resolves "habit_gone" on a 404, because the habit was deleted elsewhere', async () => {
+    server.use(handler(path, () => new HttpResponse(null, { status: 404 })))
+    await expect(send(7, '2026-10-28')).resolves.toBe('habit_gone')
   })
 
   it('rejects with an ApiError on a 500', async () => {
