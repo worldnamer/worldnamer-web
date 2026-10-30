@@ -80,7 +80,12 @@ describe('Tasks', () => {
     await screen.findByRole('list', { name: 'Task lists' })
     expect(rowNames()).toEqual([])
     const region = screen.getByRole('region', { name: 'Tasks' })
-    expect(within(region).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Add list'])
+    // The edit button is in the heading; the row itself has only the +.
+    const buttons = within(region).getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(buttons).toEqual(['Edit lists', 'Add list'])
+    expect(screen.getByRole('heading', { name: 'Tasks' }).parentElement).toContainElement(
+      screen.getByRole('button', { name: 'Edit lists' }),
+    )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Loading lists...')).not.toBeInTheDocument()
   })
@@ -602,5 +607,127 @@ describe('adding a list from the row', () => {
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
     expect(await screen.findByRole('button', { name: 'Groceries' })).toBeInTheDocument()
+  })
+})
+
+describe('the editor', () => {
+  const editButton = () => screen.queryByRole('button', { name: 'Edit lists' })
+  const confirm = () => screen.getByRole('button', { name: 'Confirm Lists' })
+  const editor = () => screen.queryByRole('group', { name: 'Edit lists' })
+  const nameBoxes = () => screen.queryAllByRole('textbox', { name: 'List name' }).map((input) => (input as HTMLInputElement).value)
+
+  it('replaces the row with a name box per list, in order, and Confirm Lists', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([...shopping, { id: 11, name: '' }]))
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+
+    await user.click(editButton()!)
+
+    expect(editor()).toBeInTheDocument()
+    expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim', 'Chores', ''])
+    expect(confirm()).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Shopping List' })).not.toBeInTheDocument()
+    expect(editButton()).not.toBeInTheDocument()
+  })
+
+  it('shows the full name in the editor, not the cut one', async () => {
+    const user = userEvent.setup()
+    const name = 'x'.repeat(100)
+    server.use(...taskListsHandlers([{ id: 1, name }]))
+    renderTasks()
+    await screen.findByRole('button', { name })
+
+    await user.click(editButton()!)
+
+    expect(nameBoxes()).toEqual([name])
+  })
+
+  it('moves focus into the editor when it opens, and back to the edit button on Confirm Lists', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+
+    await user.click(editButton()!)
+    expect(editor()).toHaveFocus()
+
+    await user.click(confirm())
+    expect(editor()).not.toBeInTheDocument()
+    expect(rowNames()).toEqual(['Shopping List', 'Vertex Rim', 'Chores'])
+    expect(editButton()).toHaveFocus()
+  })
+
+  it('keeps the selected list after Confirm Lists, and asks the server for nothing on the way', async () => {
+    const user = userEvent.setup()
+    const requests: string[] = []
+    server.use(...taskListsHandlers(shopping))
+    renderTasks()
+    await user.click(await screen.findByRole('button', { name: 'Vertex Rim' }))
+    server.events.on('request:start', ({ request }) => requests.push(`${request.method} ${request.url}`))
+
+    await user.click(editButton()!)
+    await user.click(confirm())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    server.events.removeAllListeners()
+
+    expect(pressed()).toEqual(['Vertex Rim'])
+    expect(requests).toEqual([])
+  })
+
+  it('shows Confirm Lists and no name boxes when there are no lists', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([]))
+    renderTasks()
+    await screen.findByRole('list', { name: 'Task lists' })
+
+    await user.click(editButton()!)
+
+    expect(nameBoxes()).toEqual([])
+    expect(confirm()).toBeInTheDocument()
+  })
+
+  it('disables the edit button until the lists have loaded', async () => {
+    const g = gate()
+    server.use(http.get(`${API_BASE}/task_lists`, g.wait), ...taskListsHandlers(shopping))
+    renderTasks()
+
+    expect(editButton()).toBeDisabled()
+    g.open()
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(editButton()).toBeEnabled()
+  })
+
+  it('saves a new list in the row when the edit button is clicked, and the editor shows it once saved', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers([{ id: 1, name: 'Chores' }]))
+    const sent = recordRequests('post', '/task_lists')
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+
+    await user.click(screen.getByRole('button', { name: 'Add list' }))
+    await user.keyboard('Groceries')
+    await user.click(editButton()!)
+
+    await waitFor(() => expect(nameBoxes()).toEqual(['Chores', 'Groceries']))
+    expect(sent.map((r) => r.body)).toEqual([{ task_list: { name: 'Groceries' } }])
+  })
+
+  it('shows a failed add on the card after the editor has replaced the row', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(`${API_BASE}/task_lists`, () => new HttpResponse(null, { status: 500 })),
+      ...taskListsHandlers([{ id: 1, name: 'Chores' }]),
+    )
+    renderTasks()
+    await screen.findByRole('button', { name: 'Chores' })
+
+    await user.click(screen.getByRole('button', { name: 'Add list' }))
+    await user.keyboard('Groceries')
+    await user.click(editButton()!)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't add the list. Try again.")
+    expect(editor()).toBeInTheDocument()
+    expect(nameBoxes()).toEqual(['Chores'])
   })
 })
