@@ -23,3 +23,16 @@ export async function createTaskList(name: string): Promise<TaskList> {
   const body = (await response.json()) as { task_list: TaskList }
   return body.task_list
 }
+
+// PATCH /task_lists/:id renames a list. Resolves the list as saved (surrounding spaces stripped). Rejects with an
+// ApiError otherwise: a 422 says what is wrong with the name, and a 404 means the list is gone (deleted elsewhere).
+export async function renameTaskList(id: number, name: string): Promise<TaskList> {
+  const response = await apiFetch(`/task_lists/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_list: { name } }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { task_list: TaskList }
+  return body.task_list
+}
