@@ -36,13 +36,39 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, message)
 }
 
+// How long any request may wait for the API before it is given up on.
+export const REQUEST_TIMEOUT_MS = 5000
+
+// fetch() that rejects if the API has not answered within REQUEST_TIMEOUT_MS, the same way a network error does. A signal
+// in init still works: aborting it aborts the request, and fetch rejects with the caller's reason. The two signals are
+// combined by hand (a controller that either one can abort). The timer is cleared as soon as the request settles.
+export async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const callerSignal = init?.signal
+  const abortFromCaller = () => controller.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) {
+    abortFromCaller()
+  } else {
+    callerSignal?.addEventListener('abort', abortFromCaller, { once: true })
+  }
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException('The request timed out.', 'TimeoutError'))
+  }, REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+    callerSignal?.removeEventListener('abort', abortFromCaller)
+  }
+}
+
 type TokenResponse = { access_token: string; user: SessionUser }
 
 async function requestNewToken(): Promise<SessionUser | null> {
   let response: Response
   try {
     // credentials: 'include' is required: a cross-origin fetch ignores Set-Cookie and does not send the cookie without it.
-    response = await fetch(`${API_BASE}/session/refresh`, { method: 'POST', credentials: 'include' })
+    response = await fetchWithTimeout(`${API_BASE}/session/refresh`, { method: 'POST', credentials: 'include' })
   } catch {
     // Network error: the API may just be down or starting up. Keep the flag so the next page load tries again.
     return null
@@ -76,7 +102,7 @@ function send(path: string, init: RequestInit | undefined): Promise<Response> {
   const headers = new Headers(init?.headers)
   const token = getAccessToken()
   if (token !== null) headers.set('Authorization', `Bearer ${token}`)
-  return fetch(`${API_BASE}${path}`, { ...init, headers })
+  return fetchWithTimeout(`${API_BASE}${path}`, { ...init, headers })
 }
 
 // fetch() for private endpoints. Adds the bearer token; on a 401 refreshes once and retries once, never more.
