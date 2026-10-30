@@ -23,9 +23,13 @@ export function useSession(): { pending: boolean; user: SessionUser | null } {
 
   // logout() calls queryClient.clear(), which deletes the query object that useQuery above is watching, then writes
   // a fresh one. The old watcher never hears about it. So the value we show is read straight from the cache, and
-  // this component re-renders whenever the cache changes.
+  // this component re-renders whenever the session entry changes. Only that entry: another component starting its own
+  // query while it renders (the habit grid does) must not make this one update in the middle of that render.
   const data = useSyncExternalStore(
-    (onChange) => queryClient.getQueryCache().subscribe(onChange),
+    (onChange) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        if (event.query.queryKey[0] === SESSION_KEY[0]) onChange()
+      }),
     () => queryClient.getQueryData<SessionUser | null>(SESSION_KEY),
   )
 
