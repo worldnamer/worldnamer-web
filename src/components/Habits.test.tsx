@@ -6,6 +6,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { REQUEST_TIMEOUT_MS } from '@/api/client'
 import { setAccessToken, clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, habitsHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
@@ -805,6 +806,41 @@ describe('ticking a day', () => {
     // The refetch is still held, so the revert did not come from it.
     expect(refetches.gets).toBeLessThanOrEqual(2)
     refetches.release()
+  })
+
+  it('gives up on a toggle the API never answers: reverts the box, shows the error, refetches, and frees the box', async () => {
+    // The real 5 s wait is shortened: only the request timer is redirected, every other timer is left alone.
+    const realSetTimeout = globalThis.setTimeout
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+      realSetTimeout(handler, delay === REQUEST_TIMEOUT_MS ? 50 : delay, ...args)) as typeof setTimeout)
+    const user = userEvent.setup()
+    let gets = 0
+    let puts = 0
+    server.use(
+      http.get(`${API_BASE}/habits`, () => {
+        gets += 1
+      }),
+      http.put(completionPath, () => {
+        puts += 1
+        if (puts === 1) return new Promise<Response>(() => {})
+        return new HttpResponse(null, { status: 204 })
+      }),
+      ...habitsHandlers([stretch]),
+    )
+    renderHabits()
+    await screen.findByText('Stretch')
+
+    await user.click(box(wednesday))
+    expect(box(wednesday)).toBeChecked()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save Stretch, Wednesday Oct 28. Try again.")
+    expect(box(wednesday)).not.toBeChecked()
+    await waitFor(() => expect(gets).toBe(2))
+
+    // The next click is not stuck behind the hung one.
+    await user.click(box(wednesday))
+    await waitFor(() => expect(puts).toBe(2))
+    expect(box(wednesday)).toBeChecked()
   })
 
   it('places the error line under the heading row and above the grid', async () => {
