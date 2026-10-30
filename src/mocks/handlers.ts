@@ -151,3 +151,18 @@ export function habitsHandlers(initial: MockHabit[] = []) {
 
   return [list, create, remove, tick, untick]
 }
+
+// The task lists. taskListsHandlers(initial) keeps one in-memory list, in its saved order, that its handlers share, so
+// a change shows up in the next GET. Opt-in like the others: server.use(...taskListsHandlers([...])).
+export type MockTaskList = { id: number; name: string }
+
+export function taskListsHandlers(initial: MockTaskList[] = []) {
+  const lists = initial.map((l) => ({ id: l.id, name: l.name }))
+
+  const list = http.get(`${API_BASE}/task_lists`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  return [list]
+}
