@@ -137,7 +137,7 @@ export function TaskItem({
       <input
         type="checkbox"
         aria-label={taskName(task.text)}
-        className="mt-2 size-4 shrink-0 cursor-pointer accent-brand"
+        className="ml-2 mt-2 size-4 shrink-0 cursor-pointer accent-brand"
         checked={task.done}
         onChange={() => toggle.mutate({ listId, done: !task.done })}
       />
