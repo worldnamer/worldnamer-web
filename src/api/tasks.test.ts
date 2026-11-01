@@ -108,3 +108,11 @@ describe('updateTask', () => {
     })
   })
 })
+
+describe('updateTask with done', () => {
+  it('checks and unchecks a task, leaving its text', async () => {
+    server.use(...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: false }] }))
+    await expect(updateTask(4, 7, { done: true })).resolves.toEqual({ id: 7, text: 'Milk', done: true })
+    await expect(updateTask(4, 7, { done: false })).resolves.toEqual({ id: 7, text: 'Milk', done: false })
+  })
+})
