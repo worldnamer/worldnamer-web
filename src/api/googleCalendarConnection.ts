@@ -11,3 +11,16 @@ export async function getGoogleCalendarConnection(): Promise<ConnectionStatus> {
   const body = (await response.json()) as { google_calendar_connection: { status: ConnectionStatus } }
   return body.google_calendar_connection.status
 }
+
+// POST /google_calendar_connection/authorization starts the connect flow. Resolves Google's consent address, which the
+// caller sends the browser to. credentials: 'include' is required: the API answers with the wn_google_oauth cookie that
+// ties the flow to this browser, and a cross-origin fetch ignores Set-Cookie without it.
+export async function startGoogleCalendarAuthorization(): Promise<string> {
+  const response = await apiFetch('/google_calendar_connection/authorization', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { authorization_url: string }
+  return body.authorization_url
+}

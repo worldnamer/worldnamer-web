@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { getGoogleCalendarConnection } from '@/api/googleCalendarConnection'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { getGoogleCalendarConnection, startGoogleCalendarAuthorization } from '@/api/googleCalendarConnection'
+import { Button } from '@/components/ui/button'
+import { navigateTo } from '@/lib/externalNavigation'
 
 // The Today card: today's calendar will go here; for now it holds the state of the Google Calendar link.
 export function TodayCard() {
@@ -13,6 +15,13 @@ export function TodayCard() {
     // The app's default client refetches a stale query whenever the window regains focus. That would call Google
     // every time the user tabs back, so it is switched off here on purpose.
     refetchOnWindowFocus: false,
+  })
+
+  // Asks the API for Google's consent address and leaves the site for it. The button stays disabled after success: the
+  // page is on its way to Google, and a second click would start a second flow that replaces the first.
+  const start = useMutation({
+    mutationFn: startGoogleCalendarAuthorization,
+    onSuccess: (url) => navigateTo(url),
   })
 
   return (
@@ -30,6 +39,16 @@ export function TodayCard() {
           </p>
         )}
         {data === 'connected' && <p>Google Calendar connected.</p>}
+        {(data === 'not_connected' || data === 'lost') && (
+          <Button className="justify-self-start" disabled={start.isPending || start.isSuccess} onClick={() => start.mutate()}>
+            Connect Google Calendar
+          </Button>
+        )}
+        {start.isError && (
+          <p role="alert" className="text-destructive">
+            Couldn't start connecting. Try again.
+          </p>
+        )}
       </div>
     </section>
   )
