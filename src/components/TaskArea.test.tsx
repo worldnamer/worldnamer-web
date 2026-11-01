@@ -452,3 +452,189 @@ describe('adding a task', () => {
     expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs', 'Bread'])
   })
 })
+
+describe("editing a task's text", () => {
+  const textBox = () => screen.queryByRole('textbox', { name: 'Task text' }) as HTMLInputElement | null
+  const refused = (message: string) => () =>
+    HttpResponse.json(errorBody('validation_failed', message), { status: 422 })
+
+  it('opens a box labelled "Task text" holding the text, focused, in place of the text', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+
+    expect(textBox()).toHaveValue('Milk')
+    expect(textBox()).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Edit Milk' })).not.toBeInTheDocument()
+    expect(area('Shopping List').firstElementChild).toContainElement(textBox())
+  })
+
+  it('opens with the keyboard', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
+    await user.keyboard('{Enter}')
+
+    expect(textBox()).toHaveFocus()
+  })
+
+  it('sends PATCH with only the text on Enter, shows the new text, and returns focus to it', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Enter}')
+
+    expect(await screen.findByRole('button', { name: 'Edit Oat milk' })).toHaveFocus()
+    expect(textBox()).not.toBeInTheDocument()
+    expect(taskNames('Shopping List')).toEqual(['Oat milk', 'Eggs'])
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { text: 'Oat milk' } } }])
+  })
+
+  it('saves when focus leaves, and the new text stays after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    const { unmount } = renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+    await screen.findByRole('button', { name: 'Edit Oat milk' })
+    expect(sent).toHaveLength(1)
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    expect(await screen.findByRole('button', { name: 'Edit Oat milk' })).toBeInTheDocument()
+  })
+
+  it('sends nothing when the text has not changed, or changed only by surrounding spaces', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('button', { name: 'Edit Milk' })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control} Milk {Enter}')
+    expect(await screen.findByRole('button', { name: 'Edit Milk' })).toBeInTheDocument()
+    expect(sent).toEqual([])
+  })
+
+  it('puts the saved text back on Escape and sends nothing', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Escape}')
+
+    expect(screen.getByRole('button', { name: 'Edit Milk' })).toHaveFocus()
+    expect(textBox()).not.toBeInTheDocument()
+    expect(sent).toEqual([])
+  })
+
+  it('allows blank text: the box reads "Unnamed task" and the text button "Edit task", still clickable', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}{Backspace}{Enter}')
+
+    const edit = await screen.findByRole('button', { name: 'Edit task' })
+    expect(edit).toHaveClass('min-w-16')
+    expect(screen.getByRole('checkbox', { name: 'Unnamed task' })).toBeInTheDocument()
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { text: '' } } }])
+
+    await user.click(edit)
+    expect(textBox()).toHaveValue('')
+  })
+
+  it("shows the API's message for a 422, keeps the text, and does not resend on blur until edited", async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests(
+      'patch',
+      '/task_lists/:listId/tasks/:id',
+      refused('Text is too long (maximum is 100 characters).'),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Enter}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Text is too long (maximum is 100 characters).')
+    expect(textBox()).toHaveValue('Oat milk')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+    expect(sent).toHaveLength(1)
+    expect(textBox()).toHaveValue('Oat milk')
+  })
+
+  it('shows the generic line after a failure, keeping the text', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () => new HttpResponse(null, { status: 500 })),
+      ...both(),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Enter}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save the task. Try again.")
+    expect(textBox()).toHaveValue('Oat milk')
+  })
+
+  it('refreshes the lists and tasks quietly when the task or list was deleted elsewhere (404)', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const listGets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () =>
+        HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+      ),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Enter}')
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(listGets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('saves an open edit to its own list when another list is clicked', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk')
+    await user.click(screen.getByRole('button', { name: 'Chores' }))
+    await screen.findByText('Sweep')
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].path).toBe('/api/v1/task_lists/4/tasks/1')
+
+    await user.click(screen.getByRole('button', { name: 'Shopping List' }))
+    expect(await screen.findByRole('button', { name: 'Edit Oat milk' })).toBeInTheDocument()
+  })
+})

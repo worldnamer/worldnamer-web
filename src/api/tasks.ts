@@ -25,3 +25,20 @@ export async function createTask(listId: number, text: string): Promise<Task> {
   const body = (await response.json()) as { task: Task }
   return body.task
 }
+
+// The fields of a task that PATCH can change. Send only the ones being changed: the others stay as they are on the
+// server, so an edit and a check in flight together cannot undo each other.
+export type TaskChanges = { text?: string; done?: boolean }
+
+// PATCH /task_lists/:listId/tasks/:id. Resolves the task as saved (text with surrounding spaces stripped). Rejects with
+// an ApiError otherwise: a 422 says what is wrong with the text, and a 404 means the task or its list is gone.
+export async function updateTask(listId: number, id: number, changes: TaskChanges): Promise<Task> {
+  const response = await apiFetch(`/task_lists/${listId}/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task: changes }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { task: Task }
+  return body.task
+}

@@ -87,7 +87,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
       {data && (
         <ul aria-label={`${accessibleListName(list.name)} tasks`} className="grid gap-1">
           {data.map((task) => (
-            <TaskItem key={task.id} task={task} />
+            <TaskItem key={task.id} task={task} listId={list.id} onError={onError} />
           ))}
           {/* The last row, where the next task lands: the + until clicked, then the draft in its place. Focusing the
               draft scrolls it into view, since focus() scrolls the nearest scrolling box. */}
