@@ -5,11 +5,13 @@ import { ApiError } from '@/api/client'
 import { updateTask, type Task } from '@/api/tasks'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
+import { formatDueDate } from '@/lib/isoDate'
 import { refusal } from '@/lib/refusal'
 import { isBlankText, taskName } from '@/lib/taskText'
 import { cn } from '@/lib/utils'
 
-// One task: its checkbox, then its text, struck through once checked. A checked task stays where it is in the list.
+// One task, on one line: its checkbox, its text (struck through once checked, and cut with an ellipsis when it does not
+// fit), then its due date if it has one. A checked task stays where it is in the list, and keeps its date.
 //
 // The checkbox saves as soon as it changes. The change shows at once (optimistic) and is put back if the request fails.
 //
@@ -22,12 +24,14 @@ import { cn } from '@/lib/utils'
 export function TaskItem({
   task,
   listId,
+  currentYear,
   onError,
   onAskToDelete,
   deleting,
 }: {
   task: Task
   listId: number
+  currentYear: number
   onError: (message: string | null) => void
   onAskToDelete: (task: Task, button: HTMLElement) => void
   deleting: boolean
@@ -165,10 +169,13 @@ export function TaskItem({
           ref={editRef}
           type="button"
           aria-label={isBlankText(task.text) ? 'Edit task' : `Edit ${task.text}`}
-          // min-w-16 keeps a blank task's text a target worth clicking, and also lets the button shrink below its
-          // longest word, so long text wraps inside the area instead of widening it.
+          // The text keeps to one line. flex-1 gives it the room the date and icons leave (so a blank task is still a
+          // target worth clicking), min-w-0 lets it be narrower than its text, and truncate cuts what does not fit with
+          // an ellipsis instead of widening the area. The full text is in the title, for a mouse, and in the box that
+          // clicking opens; touch has no tooltip.
+          title={isBlankText(task.text) ? undefined : task.text}
           className={cn(
-            'min-h-8 min-w-16 flex-1 rounded-md px-1 py-1 text-left text-sm break-words outline-none',
+            'min-h-8 min-w-0 flex-1 truncate rounded-md px-1 py-1 text-left text-sm outline-none',
             'focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
             task.done && 'text-muted-foreground line-through',
           )}
@@ -176,6 +183,13 @@ export function TaskItem({
         >
           {task.text}
         </button>
+      )}
+      {task.due_on && (
+        // leading-8 centres the date on the row's 32px line. It never shrinks or wraps; the text gives way instead.
+        <span className="shrink-0 text-sm leading-8 whitespace-nowrap text-muted-foreground">
+          <span className="sr-only">Due </span>
+          <time dateTime={task.due_on}>{formatDueDate(task.due_on, currentYear)}</time>
+        </span>
       )}
       {/* Hidden with opacity, not removed, so it keeps its space, stays in the tab order and shows when focused. Where
           the device cannot hover (touch) it is always shown. */}

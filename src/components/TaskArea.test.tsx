@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers, tasksHandlers, type MockTask } from '@/mocks/handlers'
@@ -216,12 +216,32 @@ describe('the height of the tasks area', () => {
     expect((await screen.findByText('Loading tasks...')).parentElement).toHaveClass('h-72', 'overflow-y-auto')
   })
 
-  it('wraps long text rather than widening the box', async () => {
+  it('cuts long text to one line with an ellipsis rather than widening the box, with the full text as its title', async () => {
     const text = 'x'.repeat(100)
     server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }))
     renderTasks()
 
-    expect(await screen.findByText(text)).toHaveClass('break-words')
+    const button = await screen.findByRole('button', { name: `Edit ${text}` })
+    expect(button).toHaveClass('truncate', 'min-w-0', 'flex-1')
+    expect(button).not.toHaveClass('break-words')
+    expect(button).toHaveAttribute('title', text)
+  })
+
+  it('opens the edit box with the full text of a cut task', async () => {
+    const user = userEvent.setup()
+    const text = 'x'.repeat(100)
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }))
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: `Edit ${text}` }))
+    expect(screen.getByRole('textbox', { name: 'Task text' })).toHaveValue(text)
+  })
+
+  it('gives a blank task no title', async () => {
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text: '', done: false }] }))
+    renderTasks()
+
+    expect(await screen.findByRole('button', { name: 'Edit task' })).not.toHaveAttribute('title')
   })
 })
 
@@ -568,7 +588,7 @@ describe("editing a task's text", () => {
     await user.keyboard('{Control>}a{/Control}{Backspace}{Enter}')
 
     const edit = await screen.findByRole('button', { name: 'Edit task' })
-    expect(edit).toHaveClass('min-w-16')
+    expect(edit).toHaveClass('flex-1')
     expect(screen.getByRole('checkbox', { name: 'Unnamed task' })).toBeInTheDocument()
     expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { text: '' } } }])
 
@@ -1086,5 +1106,90 @@ describe('deleting a task', () => {
 
     await waitFor(() => expect(queryClient.isMutating()).toBe(0))
     expect(taskNames('Shopping List')).toEqual(['Eggs'])
+  })
+})
+
+describe("a task's due date", () => {
+  // The current year is read from the clock, so it is pinned: 1 November 2026, a Sunday, at noon in Los Angeles.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 1, 12))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const dated = (tasks: MockTask[]) => [...taskListsHandlers(lists), ...tasksHandlers({ 4: tasks })]
+  const rowOf = (name: string) => screen.getByRole('checkbox', { name }).closest('li') as HTMLElement
+  // The date's text is split between a screen-reader-only "Due " and the visible date, so it is found by the whole
+  // text a screen reader reads.
+  const byWholeText = (text: string) => (_content: string, element: Element | null) =>
+    element?.tagName === 'SPAN' && element.textContent === text
+
+  it('shows a date in the current year as "Nov 5", muted, and named "Due Nov 5"', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    renderTasks()
+
+    const date = await screen.findByText(byWholeText('Due Nov 5'))
+    expect(date).toHaveClass('text-muted-foreground')
+    expect(date.querySelector('time')).toHaveAttribute('dateTime', '2026-11-05')
+    expect(within(date).getByText('Due')).toHaveClass('sr-only')
+  })
+
+  it('adds the year to a date outside the current year', async () => {
+    server.use(
+      ...dated([
+        { id: 1, text: 'Milk', done: false, due_on: '2027-11-05' },
+        { id: 2, text: 'Eggs', done: false, due_on: '2025-12-31' },
+      ]),
+    )
+    renderTasks()
+
+    expect(await screen.findByText(byWholeText('Due Nov 5, 2027'))).toBeInTheDocument()
+    expect(screen.getByText(byWholeText('Due Dec 31, 2025'))).toBeInTheDocument()
+  })
+
+  it('shows the date on the same line, after the task text and before the delete button, never shrinking or wrapping', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    renderTasks()
+
+    const date = await screen.findByText(byWholeText('Due Nov 5'))
+    const row = rowOf('Milk')
+    const children = Array.from(row.children)
+    const text = screen.getByRole('button', { name: 'Edit Milk' })
+    const remove = screen.getByRole('button', { name: 'Delete Milk' })
+    expect(date.parentElement).toBe(row)
+    expect(children.indexOf(text)).toBeLessThan(children.indexOf(date))
+    expect(children.indexOf(date)).toBeLessThan(children.indexOf(remove))
+    expect(date).toHaveClass('shrink-0', 'whitespace-nowrap')
+  })
+
+  it('shows no date, and no secondary text, for a task without one', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    renderTasks()
+
+    await screen.findByText('Milk')
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument()
+    expect(rowOf('Milk').querySelector('time')).toBeNull()
+  })
+
+  it('keeps the date of a checked task, muted but not struck through', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-11-05' }]))
+    renderTasks()
+
+    const date = await screen.findByText(byWholeText('Due Nov 5'))
+    expect(date).toHaveClass('text-muted-foreground')
+    expect(date).not.toHaveClass('line-through')
+  })
+
+  it('keeps the date after checking the task', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(screen.getByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
   })
 })

@@ -21,14 +21,14 @@ describe('listTasks', () => {
       ...tasksHandlers({
         4: [
           { id: 1, text: 'Milk', done: false },
-          { id: 3, text: '', done: true },
+          { id: 3, text: '', done: true, due_on: '2026-11-05' },
         ],
         5: [{ id: 2, text: 'Sweep', done: false }],
       }),
     )
     await expect(listTasks(4)).resolves.toEqual([
-      { id: 1, text: 'Milk', done: false },
-      { id: 3, text: '', done: true },
+      { id: 1, text: 'Milk', done: false, due_on: null },
+      { id: 3, text: '', done: true, due_on: '2026-11-05' },
     ])
     expect(auth).toBe(`Bearer ${REFRESH_TOKEN}`)
   })
@@ -53,11 +53,11 @@ describe('createTask', () => {
       }),
       ...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: true }] }),
     )
-    await expect(createTask(4, ' Bread ')).resolves.toEqual({ id: 8, text: 'Bread', done: false })
+    await expect(createTask(4, ' Bread ')).resolves.toEqual({ id: 8, text: 'Bread', done: false, due_on: null })
     expect(body).toEqual({ task: { text: ' Bread ' } })
     await expect(listTasks(4)).resolves.toEqual([
-      { id: 7, text: 'Milk', done: true },
-      { id: 8, text: 'Bread', done: false },
+      { id: 7, text: 'Milk', done: true, due_on: null },
+      { id: 8, text: 'Bread', done: false, due_on: null },
     ])
   })
 
@@ -91,7 +91,12 @@ describe('updateTask', () => {
       }),
       ...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: true }] }),
     )
-    await expect(updateTask(4, 7, { text: ' Oat milk ' })).resolves.toEqual({ id: 7, text: 'Oat milk', done: true })
+    await expect(updateTask(4, 7, { text: ' Oat milk ' })).resolves.toEqual({
+      id: 7,
+      text: 'Oat milk',
+      done: true,
+      due_on: null,
+    })
     expect(body).toEqual({ task: { text: ' Oat milk ' } })
   })
 
@@ -126,7 +131,7 @@ describe('deleteTask', () => {
     )
     await expect(deleteTask(4, 7)).resolves.toEqual({ alreadyGone: false })
     expect(method).toBe('DELETE')
-    await expect(listTasks(4)).resolves.toEqual([{ id: 8, text: 'Eggs', done: false }])
+    await expect(listTasks(4)).resolves.toEqual([{ id: 8, text: 'Eggs', done: false, due_on: null }])
     await expect(listTasks(5)).resolves.toHaveLength(1)
   })
 
@@ -147,7 +152,7 @@ describe('deleteTask', () => {
 describe('updateTask with done', () => {
   it('checks and unchecks a task, leaving its text', async () => {
     server.use(...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: false }] }))
-    await expect(updateTask(4, 7, { done: true })).resolves.toEqual({ id: 7, text: 'Milk', done: true })
-    await expect(updateTask(4, 7, { done: false })).resolves.toEqual({ id: 7, text: 'Milk', done: false })
+    await expect(updateTask(4, 7, { done: true })).resolves.toEqual({ id: 7, text: 'Milk', done: true, due_on: null })
+    await expect(updateTask(4, 7, { done: false })).resolves.toEqual({ id: 7, text: 'Milk', done: false, due_on: null })
   })
 })

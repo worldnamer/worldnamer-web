@@ -1,7 +1,9 @@
 import { apiErrorFrom, apiFetch } from './client'
 
-// One task in a list. Text may be blank ("") or repeated, so a task is told apart by its id.
-export type Task = { id: number; text: string; done: boolean }
+// One task in a list. Text may be blank ("") or repeated, so a task is told apart by its id. `due_on` is a day on the
+// local calendar written 'YYYY-MM-DD', or null for no due date; it stays a string everywhere except inside the
+// calendar, and is converted only through src/lib/isoDate.ts.
+export type Task = { id: number; text: string; done: boolean; due_on: string | null }
 
 // GET /task_lists/:listId/tasks: the list's tasks, oldest first. Rejects with an ApiError on a non-2xx answer; a 404
 // means the list is not one of the user's (or no longer exists).
