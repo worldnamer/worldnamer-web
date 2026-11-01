@@ -64,6 +64,19 @@ function recordRequests(method: 'post' | 'patch', path: string, answer?: () => R
   return sent
 }
 
+// Records the path of every DELETE of a task and passes it on, or answers it with `answer` when given. Register it
+// after the handlers that answer, as for recordTaskGets.
+function recordTaskDeletes(answer?: () => Response | Promise<Response>) {
+  const paths: string[] = []
+  server.use(
+    http.delete(`${API_BASE}/task_lists/:listId/tasks/:id`, ({ request }) => {
+      paths.push(new URL(request.url).pathname)
+      return answer?.()
+    }),
+  )
+  return paths
+}
+
 // A gate that holds a handler's answer until the test opens it.
 function gate() {
   let open!: () => void
@@ -850,5 +863,228 @@ describe('checking and unchecking a task', () => {
     await waitFor(() => expect(listsGets).toBe(2))
     await waitFor(() => expect(listGets).toEqual(['4', '4']))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+describe('deleting a task', () => {
+  const deleteButton = (name: string) => screen.getByRole('button', { name })
+  const dialog = (title: string) => screen.findByRole('alertdialog', { name: title })
+  const plus = () => screen.getByRole('button', { name: 'Add task' })
+
+  async function askToDelete(user: ReturnType<typeof userEvent.setup>, name = 'Delete Milk', title = "Delete 'Milk'?") {
+    await user.click(await screen.findByRole('button', { name }))
+    return dialog(title)
+  }
+
+  it('gives each row a delete button named for its task, last in the row', async () => {
+    server.use(...both())
+    renderTasks()
+
+    const button = await screen.findByRole('button', { name: 'Delete Milk' })
+    expect(button.closest('li')?.lastElementChild).toBe(button)
+    expect(deleteButton('Delete Eggs')).toBeInTheDocument()
+  })
+
+  it('names a blank task\'s button "Delete task"', async () => {
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text: '', done: false }] }))
+    renderTasks()
+
+    expect(await screen.findByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+  })
+
+  it('hides the button only where the device can hover, until the row is hovered or focused', async () => {
+    server.use(...both())
+    renderTasks()
+
+    const button = await screen.findByRole('button', { name: 'Delete Milk' })
+    expect(button).toHaveClass(
+      'can-hover:opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100',
+      'focus-visible:opacity-100',
+    )
+    expect(button.closest('li')).toHaveClass('group')
+  })
+
+  it('is reached with Tab from the task text', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
+    await user.tab()
+
+    expect(deleteButton('Delete Milk')).toHaveFocus()
+  })
+
+  it('asks first, in a dialog titled with the task, and opens with the keyboard', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    ;(await screen.findByRole('button', { name: 'Delete Milk' })).focus()
+    await user.keyboard('{Enter}')
+
+    const confirm = await dialog("Delete 'Milk'?")
+    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('titles the dialog "Delete this task?" for a blank task, with no empty quotes', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text: '', done: false }] }))
+    renderTasks()
+
+    expect(await askToDelete(user, 'Delete task', 'Delete this task?')).toBeInTheDocument()
+  })
+
+  it('sends nothing on Cancel, keeps the task, and returns focus to the delete button', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const deletes = recordTaskDeletes()
+    renderTasks()
+
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteButton('Delete Milk')).toHaveFocus()
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+    expect(deletes).toEqual([])
+  })
+
+  it('sends one DELETE on confirm, removes the task without fetching again, and puts focus on the +', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const gets = recordTaskGets()
+    const deletes = recordTaskDeletes()
+    renderTasks()
+
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Eggs']))
+    await waitFor(() => expect(plus()).toHaveFocus())
+    expect(deletes).toEqual(['/api/v1/task_lists/4/tasks/1'])
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(gets).toEqual(['4'])
+  })
+
+  it('keeps the task gone after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const { unmount } = renderTasks()
+
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Eggs']))
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    await screen.findByText('Eggs')
+    expect(taskNames('Shopping List')).toEqual(['Eggs'])
+  })
+
+  it('counts a 404 (already deleted elsewhere) as deleted, and fetches the lists and tasks again quietly', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const gets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+    )
+    recordTaskDeletes(() => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }))
+    renderTasks()
+
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(gets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['Milk', 'Delete Milk', "Delete 'Milk'?", "Couldn't delete 'Milk'. Try again."],
+    ['', 'Delete task', 'Delete this task?', "Couldn't delete this task. Try again."],
+  ])('keeps task %j after a failure, says so on the line, and enables its button again', async (text, name, title, message) => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }))
+    recordTaskDeletes(() => new HttpResponse(null, { status: 500 }))
+    renderTasks()
+
+    const confirm = await askToDelete(user, name, title)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(taskNames('Shopping List')).toEqual([text || 'Unnamed task'])
+    await waitFor(() => expect(deleteButton(name)).toBeEnabled())
+  })
+
+  it('disables the button while its DELETE is in flight', async () => {
+    const user = userEvent.setup()
+    const answer = gate()
+    server.use(...both())
+    recordTaskDeletes(async () => {
+      await answer.wait()
+      return new HttpResponse(null, { status: 204 })
+    })
+    renderTasks()
+
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(deleteButton('Delete Milk')).toBeDisabled())
+    expect(deleteButton('Delete Eggs')).toBeEnabled()
+    answer.open()
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Eggs']))
+  })
+
+  it('does not bring the task back when a check sent before the delete answers after it', async () => {
+    const user = userEvent.setup()
+    const checkAnswer = gate()
+    server.use(...both())
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async () => {
+        await checkAnswer.wait()
+        return HttpResponse.json({ task: { id: 1, text: 'Milk', done: true } })
+      }),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Eggs']))
+    checkAnswer.open()
+
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(taskNames('Shopping List')).toEqual(['Eggs'])
+  })
+
+  it('does not bring the task back when an edit sent before the delete answers after it', async () => {
+    const user = userEvent.setup()
+    const editAnswer = gate()
+    server.use(...both())
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async () => {
+        await editAnswer.wait()
+        return HttpResponse.json({ task: { id: 1, text: 'Oat milk', done: false } })
+      }),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk')
+    // Clicking the delete button blurs the text box, which sends the edit first.
+    const confirm = await askToDelete(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(within(area('Shopping List')).queryAllByRole('checkbox')).toHaveLength(1))
+    editAnswer.open()
+
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(taskNames('Shopping List')).toEqual(['Eggs'])
   })
 })

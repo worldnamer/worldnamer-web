@@ -300,5 +300,15 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return HttpResponse.json({ task: { id: found.id, text: found.text, done: found.done } })
   })
 
-  return [list, create, update]
+  // 204 for a task in this list; the same 404 for one already deleted, one in another list, or a list that is not a key.
+  const remove = http.delete(`${API_BASE}/task_lists/:listId/tasks/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    const index = tasks?.findIndex((t) => String(t.id) === params.id) ?? -1
+    if (!tasks || index === -1) return notFound()
+    tasks.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, update, remove]
 }

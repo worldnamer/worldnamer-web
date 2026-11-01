@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Trash2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import { updateTask, type Task } from '@/api/tasks'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
+import { Button } from '@/components/ui/button'
 import { refusal } from '@/lib/refusal'
 import { isBlankText, taskName } from '@/lib/taskText'
 import { cn } from '@/lib/utils'
@@ -14,14 +16,21 @@ import { cn } from '@/lib/utils'
 // The text is a button; clicking it swaps in a text box to edit it in place, with the same Enter, blur and Escape
 // behaviour as a list's name. The edit's open state lives here, in the row, so typing re-renders only this task.
 // `onError` sets the card's error line.
+//
+// The delete button at the end of the row asks the area to confirm (`onAskToDelete`); the area holds the one dialog
+// and the delete itself, and says while it is in flight (`deleting`).
 export function TaskItem({
   task,
   listId,
   onError,
+  onAskToDelete,
+  deleting,
 }: {
   task: Task
   listId: number
   onError: (message: string | null) => void
+  onAskToDelete: (task: Task, button: HTMLElement) => void
+  deleting: boolean
 }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -133,7 +142,8 @@ export function TaskItem({
   }
 
   return (
-    <li className="flex items-start gap-2">
+    // `group` lets the row's icons reveal themselves while the row is hovered or holds focus.
+    <li className="group flex items-start gap-2">
       <input
         type="checkbox"
         aria-label={taskName(task.text)}
@@ -167,6 +177,21 @@ export function TaskItem({
           {task.text}
         </button>
       )}
+      {/* Hidden with opacity, not removed, so it keeps its space, stays in the tab order and shows when focused. Where
+          the device cannot hover (touch) it is always shown. */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className={cn(
+          'text-muted-foreground hover:text-foreground',
+          'can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+        )}
+        aria-label={isBlankText(task.text) ? 'Delete task' : `Delete ${task.text}`}
+        disabled={deleting}
+        onClick={(event) => onAskToDelete(task, event.currentTarget)}
+      >
+        <Trash2Icon />
+      </Button>
     </li>
   )
 }
