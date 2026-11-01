@@ -52,6 +52,7 @@ import {
   tokenBody,
   errorBody,
   habitsHandlers,
+  taskListsHandlers,
 } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
@@ -94,7 +95,7 @@ function gate() {
 // Logged in the way John is on a reload: flag set, refresh answers 200.
 async function renderLoggedIn(route = '/') {
   setSessionFlag()
-  server.use(refreshHandler, logoutHandler, ...habitsHandlers())
+  server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
   renderApp(route)
   return screen.findByRole('button', { name: 'Account menu' })
 }
@@ -127,6 +128,18 @@ describe('logged out', () => {
     expect(dossier()).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Habits' })).not.toBeInTheDocument()
     expect(requests.filter((path) => path.endsWith('/habits'))).toEqual([])
+  })
+
+  it('never shows the Tasks card or asks for the task lists', async () => {
+    const requests: string[] = []
+    server.events.on('request:start', ({ request }) => requests.push(new URL(request.url).pathname))
+    renderApp()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    server.events.removeAllListeners()
+
+    expect(screen.queryByRole('region', { name: 'Tasks' })).not.toBeInTheDocument()
+    expect(requests.filter((path) => path.endsWith('/task_lists'))).toEqual([])
   })
 
   it('shows the dossier and a Login button beside Résumé, with no menu', () => {
@@ -197,7 +210,7 @@ describe('login form', () => {
 
   it('can be submitted with Enter from the password field', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -267,7 +280,7 @@ describe('login form', () => {
 describe('successful login', () => {
   it('closes the modal, swaps Login for the account menu and shows the logged-in view', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -282,7 +295,7 @@ describe('successful login', () => {
 
   it('shows the username as plain text, then Log out, in the menu', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -310,6 +323,7 @@ describe('log out', () => {
     server.use(
       refreshHandler,
       ...habitsHandlers(),
+      ...taskListsHandlers(),
       http.delete(`${API_BASE}/session`, () => {
         deleted += 1
         return new HttpResponse(null, { status: 204 })
@@ -332,7 +346,7 @@ describe('log out', () => {
     ['a network error', () => HttpResponse.error()],
   ])('still logs out when the DELETE fails with %s', async (_label, answer) => {
     setSessionFlag()
-    server.use(refreshHandler, ...habitsHandlers(), http.delete(`${API_BASE}/session`, answer))
+    server.use(refreshHandler, ...habitsHandlers(), ...taskListsHandlers(), http.delete(`${API_BASE}/session`, answer))
     renderApp()
 
     await openMenuAndLogOut()
@@ -373,11 +387,19 @@ describe('session restore on page load', () => {
     expect(hasSessionFlag()).toBe(true)
   })
 
+  it('with the flag and a 200 refresh shows the Habits card and the Tasks card', async () => {
+    await renderLoggedIn()
+
+    expect(screen.getByRole('region', { name: 'Habits' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Tasks' })).toBeInTheDocument()
+  })
+
   it('with the flag shows neither the dossier, Login nor the menu while the refresh is pending', async () => {
     const g = gate()
     setSessionFlag()
     server.use(
       ...habitsHandlers(),
+      ...taskListsHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened
@@ -429,6 +451,7 @@ describe('habit list', () => {
         fetches += 1
       }),
       ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
+      ...taskListsHandlers(),
     )
     renderApp()
     expect(await screen.findByText('Stretch')).toBeInTheDocument()
@@ -463,6 +486,7 @@ describe('/resume in every auth state', () => {
     setSessionFlag()
     server.use(
       ...habitsHandlers(),
+      ...taskListsHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened
