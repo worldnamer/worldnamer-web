@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { getTodayEvents, startGoogleCalendarAuthorization, type TodayEvent } from '@/api/googleCalendarConnection'
 import { Button } from '@/components/ui/button'
-import { eventsOnDay } from '@/lib/calendarDay'
+import { eventsOnDay, formatClock } from '@/lib/calendarDay'
 import { navigateTo } from '@/lib/externalNavigation'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
@@ -22,6 +22,10 @@ function outcomeFrom(search: string): Outcome | null {
   const value = new URLSearchParams(search).get(OUTCOME_PARAM)
   return value === 'cancelled' || value === 'failed' ? value : null
 }
+
+// How often the events are fetched again while the card is open and connected. The API keeps Google's answer for a
+// minute, so a new event can take about this long plus a minute to appear.
+export const TODAY_REFRESH_MS = 5 * 60_000
 
 // How often the clock behind the list is renewed. Dimming and the change of day follow it, with no request.
 const CLOCK_MS = 60_000
@@ -63,6 +67,12 @@ export function TodayCard() {
     // The app's default client refetches a stale query whenever the window regains focus. That would call Google
     // every time the user tabs back, so it is switched off here on purpose.
     refetchOnWindowFocus: false,
+    // Fetch again every few minutes, but only while connected: a card that is not connected or lost has nothing to
+    // refresh, and polling it would only call Google for nothing. Not in a background tab either, which is the
+    // default; it is written out so the choice is visible.
+    refetchInterval: (query) =>
+      query.state.data?.google_calendar_connection.status === 'connected' ? TODAY_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
   })
 
   const status = data?.google_calendar_connection.status
@@ -104,7 +114,13 @@ export function TodayCard() {
             Couldn't load your calendar connection. Try reloading the page.
           </p>
         )}
-        {status === 'connected' && data?.events && <TodayEventList items={data.events.items} />}
+        {status === 'connected' && data?.events && (
+          <>
+            <TodayEventList items={data.events.items} />
+            {/* The time Google answered, as the API saw it, so a wrong device clock cannot make it wrong. */}
+            <p className="text-sm text-muted-foreground">Updated {formatClock(new Date(data.events.fetched_at))}</p>
+          </>
+        )}
         {/* A message about the connect attempt just made is more recent than the stored state, so it replaces this line. */}
         {status === 'lost' && outcome === null && <p>The connection to Google Calendar was lost.</p>}
         {(status === 'not_connected' || status === 'lost') && (
