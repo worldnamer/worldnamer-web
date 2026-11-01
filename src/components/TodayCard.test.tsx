@@ -139,6 +139,33 @@ describe('TodayCard', () => {
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['All dayTrip'])
   })
 
+  it('says there is nothing on the calendar when the API sends no events', async () => {
+    server.use(...googleCalendarHandlers('connected', []))
+    renderCard()
+    expect(await screen.findByText('Nothing on your calendar today.')).toHaveClass('text-muted-foreground')
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('says it too when the window holds events only for other days', async () => {
+    server.use(
+      ...googleCalendarHandlers('connected', [
+        timedEvent('t1', 'Yesterday', '2026-10-31T09:00:00-07:00', '2026-10-31T10:00:00-07:00'),
+        timedEvent('t2', 'Tomorrow', '2026-11-02T09:00:00-08:00', '2026-11-02T10:00:00-08:00'),
+        allDayEvent('a', 'Ended', '2026-10-30', '2026-11-01'),
+      ]),
+    )
+    renderCard()
+    expect(await screen.findByText('Nothing on your calendar today.')).toBeInTheDocument()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('does not say it when the calendar is not connected', async () => {
+    server.use(...googleCalendarHandlers('not_connected'))
+    renderCard()
+    await settled()
+    expect(screen.queryByText('Nothing on your calendar today.')).not.toBeInTheDocument()
+  })
+
   it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
     server.use(...googleCalendarHandlers('not_connected'))
     renderCard()
