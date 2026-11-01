@@ -10,6 +10,7 @@ import {
   reorderTaskLists,
   type TaskList,
 } from '@/api/taskLists'
+import { TaskArea } from '@/components/TaskArea'
 import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
 import { Button } from '@/components/ui/button'
@@ -185,6 +186,8 @@ export function Tasks() {
         {data && mode === 'row' && (
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
+        {/* Keyed by the list, so another list gets a fresh area and nothing open in this one carries over. */}
+        {selected && mode === 'row' && <TaskArea key={selected.id} list={selected} />}
         {data && mode === 'editor' && (
           <TaskListEditor
             lists={data}

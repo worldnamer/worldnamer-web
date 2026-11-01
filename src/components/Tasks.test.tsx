@@ -1,5 +1,6 @@
 // The Tasks card. The component is rendered alone with the real queryClient and a mock token; the API is the
-// in-memory taskListsHandlers unless a test answers a request itself.
+// in-memory taskListsHandlers unless a test answers a request itself. Every list has no tasks here; the tasks area has
+// its own tests in TaskArea.test.tsx.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,6 +24,7 @@ beforeEach(() => {
   queryClient.clear()
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
+  server.use(http.get(`${API_BASE}/task_lists/:listId/tasks`, () => HttpResponse.json({ tasks: [] })))
 })
 
 const rowList = () => screen.getByRole('list', { name: 'Task lists' })
