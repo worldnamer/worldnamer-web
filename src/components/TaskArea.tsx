@@ -95,7 +95,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
             <li className="flex items-center gap-2">
               {/* Only shows where the box will be; the input is what the user acts on, so it is hidden from
                   screen readers. */}
-              <input type="checkbox" aria-hidden="true" className="size-4 shrink-0 accent-brand" checked={false} disabled readOnly />
+              <input type="checkbox" aria-hidden="true" className="ml-2 size-4 shrink-0 accent-brand" checked={false} disabled readOnly />
               <TaskListNameInput
                 name="New Task"
                 label="New task"
