@@ -638,3 +638,217 @@ describe("editing a task's text", () => {
     expect(await screen.findByRole('button', { name: 'Edit Oat milk' })).toBeInTheDocument()
   })
 })
+
+describe('checking and unchecking a task', () => {
+  const box = (name: string) => screen.getByRole('checkbox', { name })
+
+  it('checks a task with PATCH sending only done, strikes it through at once, and keeps its place', async () => {
+    const user = userEvent.setup()
+    const patch = gate()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    server.use(http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () => patch.wait()))
+    renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+
+    // Before the server has answered.
+    expect(box('Milk')).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Edit Milk' })).toHaveClass('line-through')
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+    patch.open()
+    await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { done: true } } }]))
+    expect(box('Milk')).toBeChecked()
+  })
+
+  it('is still checked and struck through after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    const { unmount } = renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    expect(await screen.findByRole('checkbox', { name: 'Milk' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Edit Milk' })).toHaveClass('line-through')
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+  })
+
+  it('unchecks a task with PATCH sending only done: false, removes the strikethrough, and stays so after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    const { unmount } = renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Eggs' }))
+
+    expect(box('Eggs')).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Edit Eggs' })).not.toHaveClass('line-through')
+    await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/3', body: { task: { done: false } } }]))
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    expect(await screen.findByRole('checkbox', { name: 'Eggs' })).not.toBeChecked()
+  })
+
+  it('checks with the keyboard', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    ;(await screen.findByRole('checkbox', { name: 'Milk' })).focus()
+    await user.keyboard(' ')
+
+    expect(box('Milk')).toBeChecked()
+  })
+
+  it.each([
+    ['Milk', "Couldn't save 'Milk'. Try again."],
+    ['', "Couldn't save this task. Try again."],
+  ])('puts the box back after a failure and names task %j on the line', async (text, message) => {
+    const user = userEvent.setup()
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () => new HttpResponse(null, { status: 500 })),
+      ...taskListsHandlers(lists),
+      ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }),
+    )
+    const gets = recordTaskGets()
+    renderTasks()
+
+    const checkbox = await screen.findByRole('checkbox', { name: text || 'Unnamed task' })
+    await user.click(checkbox)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(checkbox).not.toBeChecked()
+    // Once it has settled the tasks are fetched again, once, to show what the server has.
+    await waitFor(() => expect(gets).toEqual(['4', '4']))
+  })
+
+  it('clears the error line when the next save starts', async () => {
+    const user = userEvent.setup()
+    let patches = 0
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () => {
+        patches += 1
+        if (patches === 1) return new HttpResponse(null, { status: 500 })
+      }),
+      ...both(),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+    await screen.findByRole('alert')
+    await user.click(box('Eggs'))
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  it('sends quick clicks on one box to the server one at a time, in the order they were made', async () => {
+    const user = userEvent.setup()
+    const first = gate()
+    const bodies: unknown[] = []
+    server.use(...both())
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request }) => {
+        bodies.push(await request.clone().json())
+        if (bodies.length === 1) await first.wait()
+        return undefined
+      }),
+    )
+    renderTasks()
+
+    const milk = await screen.findByRole('checkbox', { name: 'Milk' })
+    await user.click(milk)
+    await user.click(milk)
+    await user.click(milk)
+
+    expect(milk).toBeChecked()
+    expect(bodies).toHaveLength(1) // the others wait for the first to settle
+    first.open()
+    await waitFor(() => expect(bodies).toHaveLength(3))
+    expect(bodies).toEqual([{ task: { done: true } }, { task: { done: false } }, { task: { done: true } }])
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(milk).toBeChecked()
+  })
+
+  it('stays checked when an edit sent before the check answers after it', async () => {
+    const user = userEvent.setup()
+    const textAnswer = gate()
+    server.use(...both())
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request }) => {
+        const body = (await request.clone().json()) as { task: { text?: string } }
+        if (body.task.text === undefined) return undefined
+        // The edit's answer was read before the check landed, so it still says unchecked.
+        await textAnswer.wait()
+        return HttpResponse.json({ task: { id: 1, text: 'Oat milk', done: false } })
+      }),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk')
+    // Clicking the box blurs the text box, which sends the edit, and then checks the task.
+    await user.click(box('Milk'))
+    await waitFor(() => expect(queryClient.isMutating()).toBe(1))
+    textAnswer.open()
+
+    expect(await screen.findByRole('button', { name: 'Edit Oat milk' })).toBeInTheDocument()
+    expect(box('Oat milk')).toBeChecked()
+  })
+
+  it('keeps a check made while the tasks were being fetched again', async () => {
+    const user = userEvent.setup()
+    const refetch = gate()
+    let gets = 0
+    server.use(...both())
+    server.use(
+      http.get(`${API_BASE}/task_lists/:listId/tasks`, async () => {
+        gets += 1
+        if (gets === 1) return undefined
+        // An older answer, from before the check.
+        await refetch.wait()
+        return HttpResponse.json({ tasks: shoppingTasks })
+      }),
+    )
+    renderTasks()
+    await screen.findByRole('checkbox', { name: 'Milk' })
+    void queryClient.invalidateQueries({ queryKey: ['tasks', 4] })
+    await waitFor(() => expect(gets).toBe(2))
+
+    await user.click(box('Milk'))
+    refetch.open()
+
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(box('Milk')).toBeChecked()
+  })
+
+  it('refreshes the lists and tasks quietly when the task or list was deleted elsewhere (404)', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const listGets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, () =>
+        HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+      ),
+    )
+    renderTasks()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(listGets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 
 // One task: its checkbox, then its text, struck through once checked. A checked task stays where it is in the list.
 //
+// The checkbox saves as soon as it changes. The change shows at once (optimistic) and is put back if the request fails.
+//
 // The text is a button; clicking it swaps in a text box to edit it in place, with the same Enter, blur and Escape
 // behaviour as a list's name. The edit's open state lives here, in the row, so typing re-renders only this task.
 // `onError` sets the card's error line.
@@ -63,6 +65,60 @@ export function TaskItem({
     },
   })
 
+  // Set when a check or uncheck fails, so the tasks are fetched again once the last one in flight has settled.
+  const toggleFailed = useRef(false)
+
+  const toggle = useMutation({
+    mutationKey: ['task-done'],
+    // Clicks with the same scope run one after another, in order, so quick clicks on this box reach the server in the
+    // order they were made; other tasks still save in parallel. A queued click still runs onMutate at once.
+    scope: { id: `task:${task.id}` },
+    mutationFn: ({ listId, done }: { listId: number; done: boolean }) => updateTask(listId, task.id, { done }),
+    onMutate: async ({ listId, done }) => {
+      onError(null)
+      // Cancel a fetch of these tasks in flight first, so its older answer cannot overwrite the change shown below.
+      await queryClient.cancelQueries({ queryKey: ['tasks', listId], exact: true })
+      setDone(listId, done)
+      return { wasDone: !done }
+    },
+    onSuccess: (saved, { listId }) => {
+      // Only `done` is written back, never the text, so a check cannot undo an edit. While later clicks on this box are
+      // still queued, their change is the one on screen, so the answer is written only for the last of them.
+      const queued = queryClient.isMutating({
+        mutationKey: ['task-done'],
+        predicate: (m) => m.options.scope?.id === `task:${task.id}`,
+      })
+      if (queued === 1) setDone(listId, saved.done)
+    },
+    onError: (e, { listId }, context) => {
+      // Put the box back at once, without waiting for the refetch.
+      setDone(listId, context?.wasDone ?? false)
+      toggleFailed.current = true
+      // A 404 means the task or its list was deleted elsewhere: fetch the lists again, quietly; the tasks are fetched
+      // again below.
+      if (e instanceof ApiError && e.status === 404) {
+        void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+        return
+      }
+      onError(isBlankText(task.text) ? "Couldn't save this task. Try again." : `Couldn't save '${task.text}'. Try again.`)
+    },
+    onSettled: (_saved, _error, { listId }) => {
+      // On success the box already shows what the server has, so nothing is fetched. After a failure the request may
+      // or may not have landed, so once the last check in flight settles (this one still counts) the tasks are
+      // fetched again, once, to show the server's state.
+      if (toggleFailed.current && queryClient.isMutating({ mutationKey: ['task-done'] }) === 1) {
+        toggleFailed.current = false
+        void queryClient.invalidateQueries({ queryKey: ['tasks', listId], exact: true })
+      }
+    },
+  })
+
+  function setDone(listId: number, done: boolean) {
+    queryClient.setQueryData<Task[]>(['tasks', listId], (old) =>
+      old?.map((t) => (t.id === task.id ? { ...t, done } : t)),
+    )
+  }
+
   // Resolves the text as saved, or null if it was not (the card's line says why, and the box keeps its text). Text
   // that would not change once the API strips its spaces is not sent at all.
   async function saveText(text: string, viaEnter: boolean) {
@@ -81,10 +137,9 @@ export function TaskItem({
       <input
         type="checkbox"
         aria-label={taskName(task.text)}
-        className="mt-2 size-4 shrink-0 accent-brand"
+        className="mt-2 size-4 shrink-0 cursor-pointer accent-brand"
         checked={task.done}
-        disabled
-        readOnly
+        onChange={() => toggle.mutate({ listId, done: !task.done })}
       />
       {editing ? (
         <TaskListNameInput

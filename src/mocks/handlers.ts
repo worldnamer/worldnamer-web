@@ -278,19 +278,25 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return HttpResponse.json({ task: created }, { status: 201 })
   })
 
-  // Changes a task in the list: `text` if sent, the rest left as it is. A task that is not in this list gets the 404 a
-  // missing one does, even when it is in another list; a body without `task`, or with an empty one, gets 400.
+  // Changes a task in the list: `text` and `done` if sent, the rest left as it is. A task that is not in this list gets
+  // the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one, gets 400,
+  // and so does a `done` that is not a JSON true or false.
   const update = http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request, params }) => {
     if (!hasMockToken(request)) return unauthenticated()
     const found = byList.get(String(params.listId))?.find((t) => String(t.id) === params.id)
     if (!found) return notFound()
-    const body = (await request.json()) as { task?: { text?: string | null } }
+    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown } }
     if (!body.task || Object.keys(body.task).length === 0) return badRequest()
+    const { done } = body.task
+    if ('done' in body.task && typeof done !== 'boolean') return badRequest('done must be true or false.')
+    let text = found.text
     if ('text' in body.task) {
-      const text = textFrom(body.task.text)
-      if (text instanceof Response) return text
-      found.text = text
+      const stripped = textFrom(body.task.text)
+      if (stripped instanceof Response) return stripped
+      text = stripped
     }
+    found.text = text
+    if (typeof done === 'boolean') found.done = done
     return HttpResponse.json({ task: { id: found.id, text: found.text, done: found.done } })
   })
 
