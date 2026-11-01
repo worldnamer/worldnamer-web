@@ -151,3 +151,183 @@ export function habitsHandlers(initial: MockHabit[] = []) {
 
   return [list, create, remove, tick, untick]
 }
+
+// The task lists. taskListsHandlers(initial) keeps one in-memory list, in its saved order, that its handlers share, so
+// a change shows up in the next GET. Opt-in like the others: server.use(...taskListsHandlers([...])).
+export type MockTaskList = { id: number; name: string }
+
+export function taskListsHandlers(initial: MockTaskList[] = []) {
+  const lists = initial.map((l) => ({ id: l.id, name: l.name }))
+
+  const list = http.get(`${API_BASE}/task_lists`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  let nextId = Math.max(0, ...lists.map((l) => l.id)) + 1
+  const badRequest = () => HttpResponse.json(errorBody('bad_request', 'Request body is malformed.'), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Name is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Reads { task_list: { name } } as the API does: the name stripped, a missing one stored as "", over 100 characters
+  // refused with 422, and a body without task_list answered with 400. Returns the name or the error response.
+  async function nameFrom(request: Request): Promise<string | Response> {
+    const body = (await request.json()) as { task_list?: { name?: string | null } }
+    if (!body.task_list) return badRequest()
+    const name = (body.task_list.name ?? '').trim()
+    return [...name].length > 100 ? tooLong() : name
+  }
+
+  // Appends the list at the end, the way the API does.
+  const create = http.post(`${API_BASE}/task_lists`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    const created = { id: nextId++, name }
+    lists.push(created)
+    return HttpResponse.json({ task_list: created }, { status: 201 })
+  })
+
+  // Renames a list in the store; any other id gets the API's 404, as a missing list or someone else's does.
+  const findList = (id: unknown) => lists.find((l) => String(l.id) === id)
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+  const rename = http.patch(`${API_BASE}/task_lists/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = findList(params.id)
+    if (!found) return notFound()
+    const name = await nameFrom(request)
+    if (name instanceof Response) return name
+    found.name = name
+    return HttpResponse.json({ task_list: { id: found.id, name: found.name } })
+  })
+
+  // Puts the lists in the order of `ids`, which must be exactly the ids in the store: anything else gets the API's 409,
+  // and ids that are missing, empty or not integers get 400.
+  const reorder = http.put(`${API_BASE}/task_list_order`, async ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const body = (await request.json()) as { ids?: unknown }
+    const ids = body.ids
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => Number.isInteger(id))) return badRequest()
+    const current = lists.map((l) => l.id)
+    const same = ids.length === current.length && new Set(ids).size === ids.length && ids.every((id) => current.includes(id))
+    if (!same) {
+      return HttpResponse.json(errorBody('conflict', 'The lists have changed. Reload and try again.'), { status: 409 })
+    }
+    const ordered = (ids as number[]).map((id) => findList(String(id))!)
+    lists.splice(0, lists.length, ...ordered)
+    return HttpResponse.json({ task_lists: lists.map((l) => ({ id: l.id, name: l.name })) })
+  })
+
+  // 204 for a list in the store, 404 for any other, including one already deleted.
+  const remove = http.delete(`${API_BASE}/task_lists/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = lists.findIndex((l) => String(l.id) === params.id)
+    if (index === -1) return notFound()
+    lists.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, rename, reorder, remove]
+}
+
+// The tasks, kept per list. tasksHandlers(initialByList) keeps one in-memory store, keyed by list id, that its
+// handlers share, so a change shows up in the next GET. A list id that is not a key gets the API's 404, as a missing
+// list or someone else's does. It does not see taskListsHandlers' store, so deleting a list there leaves its tasks here.
+// Opt-in like the others: server.use(...tasksHandlers({ 4: [{ id: 1, text: 'Milk', done: false }] })).
+// `due_on` is 'YYYY-MM-DD' or null, and null when left out.
+export type MockTask = { id: number; text: string; done: boolean; due_on?: string | null }
+type StoredTask = { id: number; text: string; done: boolean; due_on: string | null }
+
+export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
+  const byList = new Map<string, StoredTask[]>(
+    Object.entries(initialByList).map(([listId, tasks]) => [listId, tasks.map((t) => ({ ...t, due_on: t.due_on ?? null }))]),
+  )
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+  // A task as the API answers it.
+  const json = (t: StoredTask) => ({ id: t.id, text: t.text, done: t.done, due_on: t.due_on })
+
+  const list = http.get(`${API_BASE}/task_lists/:listId/tasks`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    return HttpResponse.json({ tasks: tasks.map(json) })
+  })
+
+  // One id sequence across every list, as the database has.
+  let nextId = Math.max(0, ...[...byList.values()].flat().map((t) => t.id)) + 1
+  const badRequest = (message = 'Request body is malformed.') =>
+    HttpResponse.json(errorBody('bad_request', message), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Text is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Text as the API stores it: stripped, a missing one as "", or the 422 for over 100 characters.
+  const textFrom = (text: string | null | undefined) => {
+    const stripped = (text ?? '').trim()
+    return [...stripped].length > 100 ? tooLong() : stripped
+  }
+
+  // Appends an unchecked task with no due date at the end of the list. Only `text` is read from { task: { text } }; a
+  // body without `task` gets 400.
+  const create = http.post(`${API_BASE}/task_lists/:listId/tasks`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    const body = (await request.json()) as { task?: { text?: string | null } }
+    if (!body.task) return badRequest()
+    const text = textFrom(body.task.text)
+    if (text instanceof Response) return text
+    const created = { id: nextId++, text, done: false, due_on: null }
+    tasks.push(created)
+    return HttpResponse.json({ task: json(created) }, { status: 201 })
+  })
+
+  // True for null or a real day written YYYY-MM-DD from 1900-01-01 to 9999-12-31, the due dates the API accepts.
+  // Written apart from src/lib/isoDate.ts on purpose, so a mistake there cannot hide behind the same mistake here.
+  const validDueOn = (value: unknown) => {
+    if (value === null) return true
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const [y, m, d] = value.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
+    const real = date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
+    return real && y >= 1900
+  }
+
+  // Changes a task in the list: `text`, `done` and `due_on` if sent, the rest left as it is. A task that is not in this
+  // list gets the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one,
+  // gets 400, and so does a `done` that is not a JSON true or false or a `due_on` that is not a date or null.
+  const update = http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = byList.get(String(params.listId))?.find((t) => String(t.id) === params.id)
+    if (!found) return notFound()
+    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown; due_on?: unknown } }
+    if (!body.task || Object.keys(body.task).length === 0) return badRequest()
+    const { done, due_on } = body.task
+    if ('done' in body.task && typeof done !== 'boolean') return badRequest('done must be true or false.')
+    if ('due_on' in body.task && !validDueOn(due_on)) {
+      return badRequest('due_on must be a date in the form YYYY-MM-DD, or null.')
+    }
+    let text = found.text
+    if ('text' in body.task) {
+      const stripped = textFrom(body.task.text)
+      if (stripped instanceof Response) return stripped
+      text = stripped
+    }
+    found.text = text
+    if (typeof done === 'boolean') found.done = done
+    if ('due_on' in body.task) found.due_on = due_on as string | null
+    return HttpResponse.json({ task: json(found) })
+  })
+
+  // 204 for a task in this list; the same 404 for one already deleted, one in another list, or a list that is not a key.
+  const remove = http.delete(`${API_BASE}/task_lists/:listId/tasks/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    const index = tasks?.findIndex((t) => String(t.id) === params.id) ?? -1
+    if (!tasks || index === -1) return notFound()
+    tasks.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, update, remove]
+}
