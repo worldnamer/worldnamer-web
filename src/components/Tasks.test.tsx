@@ -1182,6 +1182,28 @@ describe('deleting a list in the editor', () => {
   })
 
   it.each([
+    ['204', () => new HttpResponse(null, { status: 204 })],
+    ['404', () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })],
+  ])("removes the deleted list's cached tasks, and only those, after a %s", async (_status, answer) => {
+    const user = userEvent.setup()
+    server.use(http.delete(`${API_BASE}/task_lists/:id`, answer), ...taskListsHandlers(shopping))
+    renderTasks()
+    // Visit Chores, then Vertex Rim, so three lists' tasks are cached.
+    await user.click(await screen.findByRole('button', { name: 'Chores' }))
+    await screen.findByRole('list', { name: 'Chores tasks' })
+    await user.click(screen.getByRole('button', { name: 'Vertex Rim' }))
+    await screen.findByRole('list', { name: 'Vertex Rim tasks' })
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(queryClient.getQueryState(['tasks', 9])).toBeUndefined())
+    expect(queryClient.getQueryData(['tasks', 4])).toEqual([])
+    expect(queryClient.getQueryData(['tasks', 2])).toEqual([])
+  })
+
+  it.each([
     ['Chores', 'Delete Chores', "Delete 'Chores'?", "Couldn't delete 'Chores'. Try again."],
     ['', 'Delete list', 'Delete this list?', "Couldn't delete this list. Try again."],
   ])('shows an error and keeps the list %j after a 500', async (name, button, title, message) => {
