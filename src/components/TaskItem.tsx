@@ -28,7 +28,7 @@ const revealOnHover =
 // `onError` sets the card's error line.
 //
 // The calendar button opens a picker; picking a day saves it as the due date and closes the picker, and the date shows
-// once the server has answered. The calendar is rendered only while its picker is open, never once per row.
+// once the server has answered. When the task has a date, "Clear date" below the calendar removes it. The calendar is rendered only while its picker is open, never once per row.
 //
 // The delete button at the end of the row asks the area to confirm (`onAskToDelete`); the area holds the one dialog
 // and the delete itself, and says while it is in flight (`deleting`).
@@ -176,6 +176,11 @@ export function TaskItem({
     if (dueOn !== task.due_on) due.mutate({ listId, dueOn })
   }
 
+  function clearDate() {
+    setPicking(false)
+    due.mutate({ listId, dueOn: null })
+  }
+
   function setDone(listId: number, done: boolean) {
     queryClient.setQueryData<Task[]>(['tasks', listId], (old) =>
       old?.map((t) => (t.id === task.id ? { ...t, done } : t)),
@@ -272,6 +277,13 @@ export function TaskItem({
             onSelect={pickDay}
             autoFocus
           />
+          {task.due_on && (
+            <div className="flex justify-end border-t border-border p-2">
+              <Button variant="ghost" size="sm" onClick={clearDate}>
+                Clear date
+              </Button>
+            </div>
+          )}
         </PopoverContent>
       </Popover>
       <Button

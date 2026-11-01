@@ -1467,3 +1467,78 @@ describe('setting a due date', () => {
     expect(screen.getByText(byWholeText('Due Nov 6'))).toBeInTheDocument()
   })
 })
+
+describe('clearing a due date', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 1, 12))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const dated = (tasks: MockTask[]) => [...taskListsHandlers(lists), ...tasksHandlers({ 4: tasks })]
+  const byWholeText = (text: string) => (_content: string, element: Element | null) =>
+    element?.tagName === 'SPAN' && element.textContent === text
+  const picker = () => screen.queryByRole('dialog', { name: 'Due date for Milk' })
+
+  async function openPicker(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Due date for Milk' }))
+    return screen.findByRole('dialog', { name: 'Due date for Milk' })
+  }
+
+  it('sends due_on: null from "Clear date", closes, removes the date and returns focus to the button', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    const dialog = await openPicker(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Clear date' }))
+
+    expect(picker()).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(byWholeText('Due Nov 5'))).not.toBeInTheDocument())
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: null } } }])
+    expect(screen.getByRole('button', { name: 'Due date for Milk' })).toHaveFocus()
+  })
+
+  it('keeps the date cleared after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    const { unmount } = renderTasks()
+
+    const dialog = await openPicker(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Clear date' }))
+    await waitFor(() => expect(screen.queryByText(byWholeText('Due Nov 5'))).not.toBeInTheDocument())
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    await screen.findByText('Milk')
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument()
+  })
+
+  it('offers no "Clear date" when the task has no date', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    renderTasks()
+
+    const dialog = await openPicker(user)
+    expect(within(dialog).queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the date and says so on the line when clearing fails', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    recordRequests('patch', '/task_lists/:listId/tasks/:id', () => new HttpResponse(null, { status: 500 }))
+    renderTasks()
+
+    const dialog = await openPicker(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Clear date' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save the due date for 'Milk'. Try again.")
+    expect(screen.getByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
+  })
+})
