@@ -252,6 +252,8 @@ export function TaskItem({
           className={cn(
             'shrink-0 text-sm leading-8 whitespace-nowrap',
             overdue ? 'text-destructive' : 'text-muted-foreground',
+            // Struck through with the text once the task is checked.
+            task.done && 'line-through',
           )}
         >
           {/* Colour says nothing to a screen reader, so an overdue date is announced as such. */}
