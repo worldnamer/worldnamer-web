@@ -9,7 +9,7 @@ import App from './App'
 import { setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { habitsHandlers, refreshHandler, taskListsHandlers, tasksHandlers } from '@/mocks/handlers'
+import { googleCalendarHandlers, habitsHandlers, refreshHandler, taskListsHandlers, tasksHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
 beforeEach(() => {
@@ -29,6 +29,7 @@ it("shows the habit grid, the task lists and the first list's tasks after a relo
   server.use(
     refreshHandler,
     ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
+    ...googleCalendarHandlers(),
     ...taskListsHandlers([{ id: 1, name: 'Chores' }]),
     ...tasksHandlers({ 1: [{ id: 1, text: 'Sweep', done: false }] }),
   )

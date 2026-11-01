@@ -331,3 +331,16 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
 
   return [list, create, update, remove]
 }
+
+// The Google Calendar connection. googleCalendarHandlers(status) answers GET /google_calendar_connection with the given
+// status. Opt-in like the others: server.use(...googleCalendarHandlers('connected')).
+export type MockConnectionStatus = 'not_connected' | 'connected' | 'lost'
+
+export function googleCalendarHandlers(status: MockConnectionStatus = 'not_connected') {
+  const show = http.get(`${API_BASE}/google_calendar_connection`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ google_calendar_connection: { status } })
+  })
+
+  return [show]
+}
