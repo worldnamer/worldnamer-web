@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider, focusManager, useQuery } from '@tanstack/react-query'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, CONSENT_URL, errorBody, eventsBody, googleCalendarHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
+import { allDayEvent, API_BASE, CONSENT_URL, errorBody, eventsBody, googleCalendarHandlers, REFRESH_TOKEN, timedEvent } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { getTodayEvents } from '@/api/googleCalendarConnection'
 import { navigateTo } from '@/lib/externalNavigation'
@@ -13,7 +13,11 @@ import { TodayCard } from './TodayCard'
 
 vi.mock('@/lib/externalNavigation', () => ({ navigateTo: vi.fn() }))
 
+// The browser zone is America/Los_Angeles (vite.config.ts). On this day clocks go back at 2 AM, so it is 25 hours long.
+const NOW = new Date(2026, 10, 1, 12, 0)
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW })
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
 })
@@ -49,11 +53,16 @@ function Address() {
   )
 }
 
+// Waits until the first answer has been drawn, whatever it was.
+async function settled() {
+  await vi.waitFor(() => expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument())
+}
+
 describe('TodayCard', () => {
   it('is a Today region with the same heading row and rules as the other cards', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
-    await screen.findByText('Google Calendar connected.')
+    await settled()
 
     const card = screen.getByRole('region', { name: 'Today' })
     expect(card).toHaveClass('w-full', 'lg:w-1/4', 'lg:order-last')
@@ -72,7 +81,7 @@ describe('TodayCard', () => {
       }),
     )
     renderCard()
-    await screen.findByText('Google Calendar connected.')
+    await settled()
     expect(statusCalls).toBe(0)
   })
 
@@ -80,21 +89,61 @@ describe('TodayCard', () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
     expect(screen.getByText('Loading calendar...')).toHaveClass('text-muted-foreground')
-    await screen.findByText('Google Calendar connected.')
+    await settled()
     expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument()
   })
 
-  it('shows "Google Calendar connected." when connected', async () => {
-    server.use(...googleCalendarHandlers('connected'))
+  it('lists today\'s events, all-day first, with their labels', async () => {
+    server.use(
+      ...googleCalendarHandlers('connected', [
+        timedEvent('t2', 'Dinner', '2026-11-01T18:30:00-08:00', '2026-11-01T20:00:00-08:00'),
+        timedEvent('t1', 'Dentist', '2026-11-01T09:00:00-08:00', '2026-11-01T10:00:00-08:00'),
+        allDayEvent('a1', 'Holiday', '2026-11-01', '2026-11-02'),
+        timedEvent('t0', null, '2026-11-01T11:00:00-08:00', '2026-11-01T11:30:00-08:00'),
+        allDayEvent('a2', 'Yesterday only', '2026-10-31', '2026-11-01'),
+        timedEvent('t3', 'Tomorrow', '2026-11-02T09:00:00-08:00', '2026-11-02T10:00:00-08:00'),
+      ]),
+    )
     renderCard()
-    expect(await screen.findByText('Google Calendar connected.')).toBeInTheDocument()
+    const items = await screen.findAllByRole('listitem')
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^All dayHoliday$/),
+      expect.stringMatching(/^9:00\sAMDentist$/),
+      expect.stringMatching(/^11:00\sAM\(No title\)$/),
+      expect.stringMatching(/^6:30\sPMDinner$/),
+    ])
+  })
+
+  it('reads "Until" for an event from yesterday that ends today, and "All day" for one running through it', async () => {
+    server.use(
+      ...googleCalendarHandlers('connected', [
+        timedEvent('t1', 'Flight', '2026-10-31T22:00:00-07:00', '2026-11-01T02:00:00-08:00'),
+        timedEvent('t2', 'Conference', '2026-10-31T09:00:00-07:00', '2026-11-02T17:00:00-08:00'),
+      ]),
+    )
+    renderCard()
+    const [conference, flight] = await screen.findAllByRole('listitem')
+    expect(flight.textContent).toMatch(/^Until 2:00\sAMFlight$/)
+    expect(conference.textContent).toBe('All dayConference')
+  })
+
+  it('shows a multi-day all-day event on a middle day, and not one whose exclusive end is today', async () => {
+    server.use(
+      ...googleCalendarHandlers('connected', [
+        allDayEvent('a', 'Trip', '2026-10-30', '2026-11-04'),
+        allDayEvent('b', 'Over', '2026-10-30', '2026-11-01'),
+      ]),
+    )
+    renderCard()
+    const list = await screen.findByRole('list')
+    expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['All dayTrip'])
   })
 
   it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
     server.use(...googleCalendarHandlers('not_connected'))
     renderCard()
     expect(await screen.findByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
-    expect(screen.queryByText('Google Calendar connected.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -121,7 +170,7 @@ describe('TodayCard', () => {
       }),
     )
     const client = renderCard()
-    await screen.findByText('Google Calendar connected.')
+    await settled()
     expect(requests).toBe(1)
 
     // Move only the clock (not timers) past the 60 s staleTime, and check that the query really is stale.
@@ -141,7 +190,7 @@ describe('TodayCard', () => {
   it('does not show the Connect button when connected', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
-    await screen.findByText('Google Calendar connected.')
+    await settled()
     expect(screen.queryByRole('button', { name: 'Connect Google Calendar' })).not.toBeInTheDocument()
   })
 
@@ -284,7 +333,7 @@ describe('TodayCard', () => {
       server.use(...googleCalendarHandlers('connected'))
       renderCard('/?google_calendar=connected')
 
-      await screen.findByText('Google Calendar connected.')
+      await settled()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(address()).toHaveTextContent(/^\/$/)
     })
@@ -333,7 +382,7 @@ describe('TodayCard', () => {
 
       expect(await screen.findByText('The connection to Google Calendar was lost.')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
-      expect(screen.queryByText('Google Calendar connected.')).not.toBeInTheDocument()
+      expect(screen.queryByRole('list')).not.toBeInTheDocument()
     })
 
     it.each(['not_connected', 'connected'] as const)('does not show the lost line when %s', async (status) => {

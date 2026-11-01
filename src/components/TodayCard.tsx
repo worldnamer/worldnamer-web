@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import { getTodayEvents, startGoogleCalendarAuthorization } from '@/api/googleCalendarConnection'
+import { getTodayEvents, startGoogleCalendarAuthorization, type TodayEvent } from '@/api/googleCalendarConnection'
 import { Button } from '@/components/ui/button'
+import { eventsOnDay } from '@/lib/calendarDay'
 import { navigateTo } from '@/lib/externalNavigation'
 
 // The API sends the browser back to the site with ?google_calendar=connected, cancelled or failed after Google's
@@ -20,7 +21,24 @@ function outcomeFrom(search: string): Outcome | null {
   return value === 'cancelled' || value === 'failed' ? value : null
 }
 
-// The Today card: today's calendar will go here; for now it holds the state of the Google Calendar link.
+// Today's events, each with its start time or "All day". A missing title reads "(No title)".
+function TodayEventList({ items }: { items: TodayEvent[] }) {
+  // Read once when the list appears; a later change adds a clock that keeps it current.
+  const [now] = useState(() => new Date())
+  const rows = eventsOnDay(items, now)
+  return (
+    <ul className="grid gap-1">
+      {rows.map(({ event, label }) => (
+        <li key={event.id} className="flex gap-3">
+          <span className="w-20 shrink-0 tabular-nums">{label}</span>
+          <span className="min-w-0 break-words">{event.title ?? '(No title)'}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// The Today card: the state of the Google Calendar link and, when connected, today's events.
 export function TodayCard() {
   const { data, isPending, isError } = useQuery({
     queryKey: ['google_calendar_today'],
@@ -73,7 +91,7 @@ export function TodayCard() {
             Couldn't load your calendar connection. Try reloading the page.
           </p>
         )}
-        {status === 'connected' && <p>Google Calendar connected.</p>}
+        {status === 'connected' && data?.events && <TodayEventList items={data.events.items} />}
         {/* A message about the connect attempt just made is more recent than the stored state, so it replaces this line. */}
         {status === 'lost' && outcome === null && <p>The connection to Google Calendar was lost.</p>}
         {(status === 'not_connected' || status === 'lost') && (
