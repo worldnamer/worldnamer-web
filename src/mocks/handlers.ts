@@ -235,19 +235,23 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
 // handlers share, so a change shows up in the next GET. A list id that is not a key gets the API's 404, as a missing
 // list or someone else's does. It does not see taskListsHandlers' store, so deleting a list there leaves its tasks here.
 // Opt-in like the others: server.use(...tasksHandlers({ 4: [{ id: 1, text: 'Milk', done: false }] })).
-export type MockTask = { id: number; text: string; done: boolean }
+// `due_on` is 'YYYY-MM-DD' or null, and null when left out.
+export type MockTask = { id: number; text: string; done: boolean; due_on?: string | null }
+type StoredTask = { id: number; text: string; done: boolean; due_on: string | null }
 
 export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
-  const byList = new Map<string, MockTask[]>(
-    Object.entries(initialByList).map(([listId, tasks]) => [listId, tasks.map((t) => ({ ...t }))]),
+  const byList = new Map<string, StoredTask[]>(
+    Object.entries(initialByList).map(([listId, tasks]) => [listId, tasks.map((t) => ({ ...t, due_on: t.due_on ?? null }))]),
   )
   const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+  // A task as the API answers it.
+  const json = (t: StoredTask) => ({ id: t.id, text: t.text, done: t.done, due_on: t.due_on })
 
   const list = http.get(`${API_BASE}/task_lists/:listId/tasks`, ({ request, params }) => {
     if (!hasMockToken(request)) return unauthenticated()
     const tasks = byList.get(String(params.listId))
     if (!tasks) return notFound()
-    return HttpResponse.json({ tasks: tasks.map((t) => ({ id: t.id, text: t.text, done: t.done })) })
+    return HttpResponse.json({ tasks: tasks.map(json) })
   })
 
   // One id sequence across every list, as the database has.
@@ -263,8 +267,8 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return [...stripped].length > 100 ? tooLong() : stripped
   }
 
-  // Appends an unchecked task at the end of the list. Only `text` is read from { task: { text } }; a body without
-  // `task` gets 400.
+  // Appends an unchecked task with no due date at the end of the list. Only `text` is read from { task: { text } }; a
+  // body without `task` gets 400.
   const create = http.post(`${API_BASE}/task_lists/:listId/tasks`, async ({ request, params }) => {
     if (!hasMockToken(request)) return unauthenticated()
     const tasks = byList.get(String(params.listId))
@@ -273,22 +277,36 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     if (!body.task) return badRequest()
     const text = textFrom(body.task.text)
     if (text instanceof Response) return text
-    const created = { id: nextId++, text, done: false }
+    const created = { id: nextId++, text, done: false, due_on: null }
     tasks.push(created)
-    return HttpResponse.json({ task: created }, { status: 201 })
+    return HttpResponse.json({ task: json(created) }, { status: 201 })
   })
 
-  // Changes a task in the list: `text` and `done` if sent, the rest left as it is. A task that is not in this list gets
-  // the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one, gets 400,
-  // and so does a `done` that is not a JSON true or false.
+  // True for null or a real day written YYYY-MM-DD from 1900-01-01 to 9999-12-31, the due dates the API accepts.
+  // Written apart from src/lib/isoDate.ts on purpose, so a mistake there cannot hide behind the same mistake here.
+  const validDueOn = (value: unknown) => {
+    if (value === null) return true
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const [y, m, d] = value.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
+    const real = date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
+    return real && y >= 1900
+  }
+
+  // Changes a task in the list: `text`, `done` and `due_on` if sent, the rest left as it is. A task that is not in this
+  // list gets the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one,
+  // gets 400, and so does a `done` that is not a JSON true or false or a `due_on` that is not a date or null.
   const update = http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request, params }) => {
     if (!hasMockToken(request)) return unauthenticated()
     const found = byList.get(String(params.listId))?.find((t) => String(t.id) === params.id)
     if (!found) return notFound()
-    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown } }
+    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown; due_on?: unknown } }
     if (!body.task || Object.keys(body.task).length === 0) return badRequest()
-    const { done } = body.task
+    const { done, due_on } = body.task
     if ('done' in body.task && typeof done !== 'boolean') return badRequest('done must be true or false.')
+    if ('due_on' in body.task && !validDueOn(due_on)) {
+      return badRequest('due_on must be a date in the form YYYY-MM-DD, or null.')
+    }
     let text = found.text
     if ('text' in body.task) {
       const stripped = textFrom(body.task.text)
@@ -297,8 +315,19 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     }
     found.text = text
     if (typeof done === 'boolean') found.done = done
-    return HttpResponse.json({ task: { id: found.id, text: found.text, done: found.done } })
+    if ('due_on' in body.task) found.due_on = due_on as string | null
+    return HttpResponse.json({ task: json(found) })
   })
 
-  return [list, create, update]
+  // 204 for a task in this list; the same 404 for one already deleted, one in another list, or a list that is not a key.
+  const remove = http.delete(`${API_BASE}/task_lists/:listId/tasks/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    const index = tasks?.findIndex((t) => String(t.id) === params.id) ?? -1
+    if (!tasks || index === -1) return notFound()
+    tasks.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, update, remove]
 }
