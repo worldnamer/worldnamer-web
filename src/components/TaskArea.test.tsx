@@ -1148,7 +1148,67 @@ describe("a task's due date", () => {
     renderTasks()
 
     expect(await screen.findByText(byWholeText('Due Nov 5, 2027'))).toBeInTheDocument()
-    expect(screen.getByText(byWholeText('Due Dec 31, 2025'))).toBeInTheDocument()
+    expect(screen.getByText(byWholeText('Overdue, due Dec 31, 2025'))).toBeInTheDocument()
+  })
+
+  describe('overdue', () => {
+    const dateOf = (text: string) => screen.findByText(byWholeText(text))
+
+    it('shows a past date on an unchecked task in red and says it is overdue', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-10-31' }]))
+      renderTasks()
+
+      const date = await dateOf('Overdue, due Oct 31')
+      expect(date).toHaveClass('text-destructive')
+      expect(date).not.toHaveClass('text-muted-foreground')
+      expect(date.querySelector('time')).toHaveAttribute('dateTime', '2026-10-31')
+    })
+
+    it('does not mark a date today', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-01' }]))
+      renderTasks()
+
+      const date = await dateOf('Due Nov 1')
+      expect(date).toHaveClass('text-muted-foreground')
+      expect(date).not.toHaveClass('text-destructive')
+    })
+
+    it('does not mark a future date', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-02' }]))
+      renderTasks()
+
+      expect(await dateOf('Due Nov 2')).not.toHaveClass('text-destructive')
+    })
+
+    it('does not mark a past date on a checked task', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-10-31' }]))
+      renderTasks()
+
+      const date = await dateOf('Due Oct 31')
+      expect(date).toHaveClass('text-muted-foreground')
+      expect(date).not.toHaveClass('text-destructive')
+    })
+
+    it('drops the red when the task is checked and restores it when unchecked', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-10-31' }]))
+      renderTasks()
+      const user = userEvent.setup()
+
+      expect(await dateOf('Overdue, due Oct 31')).toHaveClass('text-destructive')
+      await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+      expect(await dateOf('Due Oct 31')).toHaveClass('text-muted-foreground')
+      await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+      expect(await dateOf('Overdue, due Oct 31')).toHaveClass('text-destructive')
+    })
+
+    it('shows nothing for a task with no date', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+      renderTasks()
+
+      await screen.findByRole('checkbox', { name: 'Milk' })
+      expect(rowOf('Milk').querySelector('time')).toBeNull()
+      expect(screen.queryByText(/overdue/i)).toBeNull()
+    })
   })
 
   it('shows the date on the same line, after the task text and before the delete button, never shrinking or wrapping', async () => {
