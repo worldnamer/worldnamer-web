@@ -8,6 +8,11 @@
    reference them by name (bg-background, text-muted-foreground, ...), so retheme here, not in each component. */
 @custom-variant dark (&:is(.dark *));
 
+/* Applies only where the primary input can hover (a mouse or trackpad), never on touch. A row's icons are hidden with
+   can-hover:opacity-0 and come back on hover or focus, so on a phone, or a browser that does not know the media
+   feature, they are simply always shown. It tests what the input can do, so no user-agent sniffing is needed. */
+@custom-variant can-hover (@media (hover: hover));
+
 :root {
   color-scheme: dark;
   --background: #0b0f14;
