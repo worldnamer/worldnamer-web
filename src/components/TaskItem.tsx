@@ -1,27 +1,53 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { CalendarIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import { updateTask, type Task } from '@/api/tasks'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
+import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { formatDueDate, fromIso, toIso } from '@/lib/isoDate'
 import { refusal } from '@/lib/refusal'
 import { isBlankText, taskName } from '@/lib/taskText'
 import { cn } from '@/lib/utils'
 
-// One task: its checkbox, then its text, struck through once checked. A checked task stays where it is in the list.
+// The row's icons are hidden only where the device can hover, and come back while the row is hovered or holds focus.
+// Opacity, not removal, so they keep their space (the text does not jump), stay in the tab order and show when
+// focused. Where the device cannot hover (touch) they are always shown.
+const revealOnHover =
+  'can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
+
+// One task, on one line: its checkbox, its text (struck through once checked, and cut with an ellipsis when it does not
+// fit), then its due date if it has one. A checked task stays where it is in the list, and keeps its date.
 //
 // The checkbox saves as soon as it changes. The change shows at once (optimistic) and is put back if the request fails.
 //
 // The text is a button; clicking it swaps in a text box to edit it in place, with the same Enter, blur and Escape
 // behaviour as a list's name. The edit's open state lives here, in the row, so typing re-renders only this task.
 // `onError` sets the card's error line.
+//
+// The calendar button opens a picker; picking a day saves it as the due date and closes the picker, and the date shows
+// once the server has answered. When the task has a date, "Clear date" below the calendar removes it. The calendar is rendered only while its picker is open, never once per row.
+//
+// The delete button at the end of the row asks the area to confirm (`onAskToDelete`); the area holds the one dialog
+// and the delete itself, and says while it is in flight (`deleting`).
 export function TaskItem({
   task,
   listId,
+  currentYear,
+  today,
   onError,
+  onAskToDelete,
+  deleting,
 }: {
   task: Task
   listId: number
+  currentYear: number
+  today: string
   onError: (message: string | null) => void
+  onAskToDelete: (task: Task, button: HTMLElement) => void
+  deleting: boolean
 }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -113,6 +139,50 @@ export function TaskItem({
     },
   })
 
+  const [picking, setPicking] = useState(false)
+
+  // Pessimistic, unlike the checkbox: the date shows once the server has answered. Picks on this task share a scope,
+  // so quick ones reach the server one after another, in the order they were made, and the last one wins.
+  const due = useMutation({
+    mutationKey: ['task-due'],
+    scope: { id: `task-due:${task.id}` },
+    mutationFn: ({ listId, dueOn }: { listId: number; dueOn: string | null }) =>
+      updateTask(listId, task.id, { due_on: dueOn }),
+    onMutate: () => onError(null),
+    onSuccess: (saved, { listId }) => {
+      // Only the date is written back: the text and `done` in the answer may be older than an edit or check made since.
+      queryClient.setQueryData<Task[]>(['tasks', listId], (old) =>
+        old?.map((t) => (t.id === saved.id ? { ...t, due_on: saved.due_on } : t)),
+      )
+    },
+    onError: (e, { listId }) => {
+      // A 404 means the task or its list was deleted elsewhere: fetch both again, quietly.
+      if (e instanceof ApiError && e.status === 404) {
+        void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+        void queryClient.invalidateQueries({ queryKey: ['tasks', listId], exact: true })
+        return
+      }
+      onError(
+        isBlankText(task.text)
+          ? "Couldn't save the due date for this task. Try again."
+          : `Couldn't save the due date for '${task.text}'. Try again.`,
+      )
+    },
+  })
+
+  // The calendar hands back local midnight of the day picked; toIso reads that day back without going through UTC.
+  // Picking the day already set sends nothing.
+  function pickDay(day: Date) {
+    setPicking(false)
+    const dueOn = toIso(day)
+    if (dueOn !== task.due_on) due.mutate({ listId, dueOn })
+  }
+
+  function clearDate() {
+    setPicking(false)
+    due.mutate({ listId, dueOn: null })
+  }
+
   function setDone(listId: number, done: boolean) {
     queryClient.setQueryData<Task[]>(['tasks', listId], (old) =>
       old?.map((t) => (t.id === task.id ? { ...t, done } : t)),
@@ -132,8 +202,14 @@ export function TaskItem({
     return saved.text
   }
 
+  const dueDateLabel = isBlankText(task.text) ? 'Due date for task' : `Due date for ${task.text}`
+
+  // Overdue is strictly before today; the 'YYYY-MM-DD' strings sort in date order. A done task is never overdue.
+  const overdue = !!task.due_on && !task.done && task.due_on < today
+
   return (
-    <li className="flex items-start gap-2">
+    // `group` lets the row's icons reveal themselves while the row is hovered or holds focus.
+    <li className="group flex items-start gap-2">
       <input
         type="checkbox"
         aria-label={taskName(task.text)}
@@ -155,10 +231,13 @@ export function TaskItem({
           ref={editRef}
           type="button"
           aria-label={isBlankText(task.text) ? 'Edit task' : `Edit ${task.text}`}
-          // min-w-16 keeps a blank task's text a target worth clicking, and also lets the button shrink below its
-          // longest word, so long text wraps inside the area instead of widening it.
+          // The text keeps to one line. flex-1 gives it the room the date and icons leave (so a blank task is still a
+          // target worth clicking), min-w-0 lets it be narrower than its text, and truncate cuts what does not fit with
+          // an ellipsis instead of widening the area. The full text is in the title, for a mouse, and in the box that
+          // clicking opens; touch has no tooltip.
+          title={isBlankText(task.text) ? undefined : task.text}
           className={cn(
-            'min-h-8 min-w-16 flex-1 rounded-md px-1 py-1 text-left text-sm break-words outline-none',
+            'min-h-8 min-w-0 flex-1 truncate rounded-md px-1 py-1 text-left text-sm outline-none',
             'focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
             task.done && 'text-muted-foreground line-through',
           )}
@@ -167,6 +246,69 @@ export function TaskItem({
           {task.text}
         </button>
       )}
+      {task.due_on && (
+        // leading-8 centres the date on the row's 32px line. It never shrinks or wraps; the text gives way instead.
+        <span
+          className={cn(
+            'shrink-0 text-sm leading-8 whitespace-nowrap',
+            overdue ? 'text-destructive' : 'text-muted-foreground',
+            // Struck through with the text once the task is checked.
+            task.done && 'line-through',
+          )}
+        >
+          {/* Colour says nothing to a screen reader, so an overdue date is announced as such. */}
+          <span className="sr-only">{overdue ? 'Overdue, due ' : 'Due '}</span>
+          <time dateTime={task.due_on}>{formatDueDate(task.due_on, currentYear)}</time>
+        </span>
+      )}
+      <Popover open={picking} onOpenChange={setPicking}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            // While the picker is open, focus is in the picker, outside the row, so the button stays shown by its state.
+            className={cn('text-muted-foreground hover:text-foreground', revealOnHover, 'data-[state=open]:opacity-100')}
+            aria-label={dueDateLabel}
+          >
+            <CalendarIcon />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          aria-label={dueDateLabel}
+          align="end"
+          className="w-auto p-0"
+          // Focus goes to the day (the due date, else today) rather than the first button, the month arrow, so the
+          // arrow keys move through the days at once.
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <Calendar
+            mode="single"
+            required
+            selected={task.due_on ? fromIso(task.due_on) : undefined}
+            // Opens on the due date's month; with none, the calendar opens on the current month itself.
+            defaultMonth={task.due_on ? fromIso(task.due_on) : undefined}
+            onSelect={pickDay}
+            autoFocus
+          />
+          {task.due_on && (
+            <div className="flex justify-end border-t border-border p-2">
+              <Button variant="ghost" size="sm" onClick={clearDate}>
+                Clear date
+              </Button>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className={cn('text-muted-foreground hover:text-foreground', revealOnHover)}
+        aria-label={isBlankText(task.text) ? 'Delete task' : `Delete ${task.text}`}
+        disabled={deleting}
+        onClick={(event) => onAskToDelete(task, event.currentTarget)}
+      >
+        <Trash2Icon />
+      </Button>
     </li>
   )
 }
