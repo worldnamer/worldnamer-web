@@ -173,3 +173,28 @@ describe('the tasks of the selected list', () => {
     expect(screen.queryByRole('list', { name: 'Shopping List tasks' })).not.toBeInTheDocument()
   })
 })
+
+describe('the height of the tasks area', () => {
+  it('is a fixed-height box that scrolls, holding the list', async () => {
+    server.use(...both())
+    renderTasks()
+
+    const box = (await screen.findByRole('list', { name: 'Shopping List tasks' })).parentElement
+    expect(box).toHaveClass('h-72', 'overflow-y-auto')
+  })
+
+  it('holds the loading message in the same box, so the card keeps its height while the tasks load', async () => {
+    server.use(...both())
+    renderTasks()
+
+    expect((await screen.findByText('Loading tasks...')).parentElement).toHaveClass('h-72', 'overflow-y-auto')
+  })
+
+  it('wraps long text rather than widening the box', async () => {
+    const text = 'x'.repeat(100)
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }))
+    renderTasks()
+
+    expect(await screen.findByText(text)).toHaveClass('break-words')
+  })
+})

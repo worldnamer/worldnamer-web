@@ -19,19 +19,23 @@ export function TaskArea({ list }: { list: TaskList }) {
     staleTime: 60_000,
   })
 
-  if (isPending) return <p className="text-sm text-muted-foreground">Loading tasks...</p>
-  if (isError) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        Couldn't load these tasks. Try reloading the page.
-      </p>
-    )
-  }
+  // A fixed height, about ten rows, that scrolls: the card is the same size however many tasks the list has, and
+  // while they load. On a phone this is a scroll inside the page's own scroll.
   return (
-    <ul aria-label={`${accessibleListName(list.name)} tasks`} className="grid gap-1">
-      {data.map((task) => (
-        <TaskItem key={task.id} task={task} />
-      ))}
-    </ul>
+    <div className="h-72 overflow-y-auto">
+      {isPending && <p className="text-sm text-muted-foreground">Loading tasks...</p>}
+      {isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn't load these tasks. Try reloading the page.
+        </p>
+      )}
+      {data && (
+        <ul aria-label={`${accessibleListName(list.name)} tasks`} className="grid gap-1">
+          {data.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
