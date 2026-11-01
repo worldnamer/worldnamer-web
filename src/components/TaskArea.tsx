@@ -30,6 +30,9 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
     staleTime: 60_000,
   })
 
+  // Due dates show their year only outside this one. The clock is read once, when the area mounts, rather than in
+  // each row's render: reading it during render is impure, and once per row would be wasted work.
+  const [currentYear] = useState(() => new Date().getFullYear())
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
@@ -127,6 +130,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
               key={task.id}
               task={task}
               listId={list.id}
+              currentYear={currentYear}
               onError={onError}
               onAskToDelete={askToDelete}
               deleting={deletingIds.includes(task.id)}
