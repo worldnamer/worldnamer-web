@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider, focusManager, useQuery } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
@@ -25,14 +26,27 @@ afterEach(() => {
 })
 
 // A new client with TanStack Query's own defaults, so the card's options are the only thing that stops a refetch.
-function renderCard() {
+function renderCard(address = '/') {
   const client = new QueryClient()
   render(
     <QueryClientProvider client={client}>
-      <TodayCard />
+      <MemoryRouter initialEntries={[address]}>
+        <TodayCard />
+        <Address />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   return client
+}
+
+// Shows the router's current address, so a test can see what the card did to the URL.
+function Address() {
+  const { pathname, search } = useLocation()
+  return (
+    <output aria-label="Address" data-navigation={useNavigationType()}>
+      {pathname + search}
+    </output>
+  )
 }
 
 describe('TodayCard', () => {
@@ -231,6 +245,69 @@ describe('TodayCard', () => {
       await user.click(button)
 
       await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('outcome of connecting', () => {
+    const address = () => screen.getByLabelText('Address')
+
+    it.each([
+      ['cancelled', "Google Calendar wasn't connected."],
+      ['failed', "Couldn't connect Google Calendar. Try again."],
+    ])('shows the message for ?google_calendar=%s, offers Connect and removes the parameter', async (value, message) => {
+      server.use(...googleCalendarHandlers('not_connected'))
+      renderCard(`/?google_calendar=${value}`)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(await screen.findByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
+      expect(address()).toHaveTextContent(/^\/$/)
+      // The message is kept after the address is cleaned.
+      expect(screen.getByRole('alert')).toHaveTextContent(message)
+    })
+
+    it('shows no message for ?google_calendar=connected, and removes the parameter', async () => {
+      server.use(...googleCalendarHandlers('connected'))
+      renderCard('/?google_calendar=connected')
+
+      await screen.findByText('Google Calendar connected.')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(address()).toHaveTextContent(/^\/$/)
+    })
+
+    it('ignores an unknown value, and still removes the parameter', async () => {
+      server.use(...googleCalendarHandlers('not_connected'))
+      renderCard('/?google_calendar=<b>hello</b>')
+
+      await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByText('hello')).not.toBeInTheDocument()
+      expect(address()).toHaveTextContent(/^\/$/)
+    })
+
+    it('leaves other parameters in the address', async () => {
+      server.use(...googleCalendarHandlers('not_connected'))
+      renderCard('/?a=1&google_calendar=failed&b=2')
+
+      await screen.findByRole('alert')
+      expect(address()).toHaveTextContent('/?a=1&b=2')
+    })
+
+    it('replaces the history entry instead of adding one', async () => {
+      server.use(...googleCalendarHandlers('not_connected'))
+      renderCard('/?google_calendar=failed')
+      await screen.findByRole('alert')
+      expect(address()).toHaveAttribute('data-navigation', 'REPLACE')
+    })
+
+    it('takes the message away when Connect is clicked again', async () => {
+      const user = userEvent.setup()
+      server.use(...googleCalendarHandlers('not_connected'))
+      renderCard('/?google_calendar=failed')
+      await screen.findByRole('alert')
+      await user.click(await screen.findByRole('button', { name: 'Connect Google Calendar' }))
+
+      await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
   })

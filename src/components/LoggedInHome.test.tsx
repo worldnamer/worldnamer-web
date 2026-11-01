@@ -2,6 +2,7 @@
 // the same rules.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
@@ -23,7 +24,9 @@ it('puts Tasks below Habits, at the same width, with the same rules, and a gap e
   )
   render(
     <QueryClientProvider client={queryClient}>
-      <LoggedInHome />
+      <MemoryRouter>
+        <LoggedInHome />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   await screen.findByText('Stretch')
@@ -54,7 +57,9 @@ it('puts the Today card first in the page and the cards in a row from lg, with t
   server.use(...habitsHandlers(), ...taskListsHandlers(), ...googleCalendarHandlers('connected'))
   render(
     <QueryClientProvider client={queryClient}>
-      <LoggedInHome />
+      <MemoryRouter>
+        <LoggedInHome />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   await screen.findByText('Google Calendar connected.')
