@@ -1,12 +1,16 @@
 import { QueryClient, QueryClientProvider, focusManager, useQuery } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, errorBody, googleCalendarHandlers, REFRESH_TOKEN, type MockConnectionStatus } from '@/mocks/handlers'
+import { API_BASE, CONSENT_URL, errorBody, googleCalendarHandlers, REFRESH_TOKEN, type MockConnectionStatus } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { getGoogleCalendarConnection } from '@/api/googleCalendarConnection'
+import { navigateTo } from '@/lib/externalNavigation'
 import { TodayCard } from './TodayCard'
+
+vi.mock('@/lib/externalNavigation', () => ({ navigateTo: vi.fn() }))
 
 beforeEach(() => {
   clearAccessToken()
@@ -14,6 +18,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  vi.mocked(navigateTo).mockClear()
   vi.useRealTimers()
   focusManager.setFocused(undefined)
 })
@@ -56,10 +62,10 @@ describe('TodayCard', () => {
     expect(await screen.findByText('Google Calendar connected.')).toBeInTheDocument()
   })
 
-  it('shows neither the connected line nor an error when not connected', async () => {
+  it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
     server.use(...googleCalendarHandlers('not_connected'))
     renderCard()
-    await vi.waitFor(() => expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument())
+    expect(await screen.findByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
     expect(screen.queryByText('Google Calendar connected.')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -104,6 +110,13 @@ describe('TodayCard', () => {
     expect(requests).toBe(1)
   })
 
+  it('does not show the Connect button when connected', async () => {
+    server.use(...googleCalendarHandlers('connected'))
+    renderCard()
+    await screen.findByText('Google Calendar connected.')
+    expect(screen.queryByRole('button', { name: 'Connect Google Calendar' })).not.toBeInTheDocument()
+  })
+
   // Guards the test above against passing for the wrong reason: the same query with the default focus behavior does
   // refetch when the same focus signal is sent after the same time has passed.
   it('control: a stale query without the opt-out refetches on focus', async () => {
@@ -134,5 +147,91 @@ describe('TodayCard', () => {
     await act(async () => focusManager.setFocused(true))
     vi.useRealTimers()
     await vi.waitFor(() => expect(requests).toBe(2))
+  })
+
+  describe('Connect', () => {
+    it("starts the flow with credentials: 'include', navigates to the returned address and stays disabled", async () => {
+      const user = userEvent.setup()
+      // MSW under Node always reports request.credentials as 'same-origin', so assert on what is passed to fetch itself.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      let starts = 0
+      server.use(
+        http.post(`${API_BASE}/google_calendar_connection/authorization`, () => {
+          starts += 1
+          return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201 })
+        }),
+        ...googleCalendarHandlers('not_connected'),
+      )
+      renderCard()
+      const button = await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      await user.click(button)
+
+      await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${API_BASE}/google_calendar_connection/authorization`,
+        expect.objectContaining({ method: 'POST', credentials: 'include' }),
+      )
+      expect(navigateTo).toHaveBeenCalledTimes(1)
+      expect(button).toBeDisabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(starts).toBe(1)
+    })
+
+    it('is disabled while the request is out', async () => {
+      const user = userEvent.setup()
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      server.use(
+        http.post(`${API_BASE}/google_calendar_connection/authorization`, async () => {
+          await held
+          return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201 })
+        }),
+        ...googleCalendarHandlers('not_connected'),
+      )
+      renderCard()
+      const button = await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      await user.click(button)
+      expect(button).toBeDisabled()
+      release()
+      await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
+    })
+
+    it('shows an alert and does not navigate when the start fails, and can be tried again', async () => {
+      const user = userEvent.setup()
+      server.use(
+        http.post(`${API_BASE}/google_calendar_connection/authorization`, () =>
+          HttpResponse.json(errorBody('internal_error', 'Something went wrong.'), { status: 500 }),
+        ),
+        ...googleCalendarHandlers('not_connected'),
+      )
+      renderCard()
+      const button = await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      await user.click(button)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't start connecting. Try again.")
+      expect(navigateTo).not.toHaveBeenCalled()
+      expect(button).toBeEnabled()
+    })
+
+    it('clears the start error when Connect is clicked again', async () => {
+      const user = userEvent.setup()
+      let attempts = 0
+      server.use(
+        http.post(`${API_BASE}/google_calendar_connection/authorization`, () => {
+          attempts += 1
+          if (attempts === 1) return HttpResponse.json(errorBody('internal_error', 'Nope.'), { status: 500 })
+          return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201 })
+        }),
+        ...googleCalendarHandlers('not_connected'),
+      )
+      renderCard()
+      const button = await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      await user.click(button)
+      await screen.findByRole('alert')
+      await user.click(button)
+
+      await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 })

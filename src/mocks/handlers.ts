@@ -333,7 +333,10 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
 }
 
 // The Google Calendar connection. googleCalendarHandlers(status) answers GET /google_calendar_connection with the given
-// status. Opt-in like the others: server.use(...googleCalendarHandlers('connected')).
+// status, and POST /google_calendar_connection/authorization with a consent address. Opt-in like the others:
+// server.use(...googleCalendarHandlers('connected')).
+export const CONSENT_URL = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state=test'
+
 export type MockConnectionStatus = 'not_connected' | 'connected' | 'lost'
 
 export function googleCalendarHandlers(status: MockConnectionStatus = 'not_connected') {
@@ -342,5 +345,10 @@ export function googleCalendarHandlers(status: MockConnectionStatus = 'not_conne
     return HttpResponse.json({ google_calendar_connection: { status } })
   })
 
-  return [show]
+  const start = http.post(`${API_BASE}/google_calendar_connection/authorization`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201, headers: noStore })
+  })
+
+  return [show, start]
 }
