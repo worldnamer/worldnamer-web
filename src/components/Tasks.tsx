@@ -144,6 +144,8 @@ export function Tasks() {
     onMutate: () => setError(null),
     onSuccess: (_result, list) => {
       queryClient.setQueryData<TaskList[]>(['task_lists'], (old) => old?.filter((l) => l.id !== list.id))
+      // Its tasks go with it. Only this list's entry: the other lists' cached tasks stay.
+      queryClient.removeQueries({ queryKey: ['tasks', list.id], exact: true })
       // Fetch again too, so a 404 (already deleted elsewhere) or another tab's changes show up.
       void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
     },
