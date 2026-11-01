@@ -5,6 +5,8 @@ import { getTodayEvents, startGoogleCalendarAuthorization, type TodayEvent } fro
 import { Button } from '@/components/ui/button'
 import { eventsOnDay } from '@/lib/calendarDay'
 import { navigateTo } from '@/lib/externalNavigation'
+import { useNow } from '@/lib/useNow'
+import { cn } from '@/lib/utils'
 
 // The API sends the browser back to the site with ?google_calendar=connected, cancelled or failed after Google's
 // consent screen. Only the two that need a message are kept; "connected" needs none, because the events query says
@@ -21,21 +23,30 @@ function outcomeFrom(search: string): Outcome | null {
   return value === 'cancelled' || value === 'failed' ? value : null
 }
 
-// Today's events, each with its start time or "All day". A missing title reads "(No title)".
+// How often the clock behind the list is renewed. Dimming and the change of day follow it, with no request.
+const CLOCK_MS = 60_000
+
+// Today's events, each with its start time or "All day". A missing title reads "(No title)". An event that has ended is
+// dimmed, and also says ", ended" to a screen reader, because colour alone is not enough.
 function TodayEventList({ items }: { items: TodayEvent[] }) {
-  // Read once when the list appears; a later change adds a clock that keeps it current.
-  const [now] = useState(() => new Date())
-  const rows = eventsOnDay(items, now)
+  const now = useNow(CLOCK_MS)
+  const rows = eventsOnDay(items, new Date(now))
   // Also the answer when the API sent events only for other days, or when every event of the day was filtered out.
   if (rows.length === 0) return <p className="text-muted-foreground">Nothing on your calendar today.</p>
   return (
     <ul className="grid gap-1">
-      {rows.map(({ event, label }) => (
-        <li key={event.id} className="flex gap-3">
-          <span className="w-20 shrink-0 tabular-nums">{label}</span>
-          <span className="min-w-0 break-words">{event.title ?? '(No title)'}</span>
-        </li>
-      ))}
+      {rows.map(({ event, label, endsAtMs }) => {
+        const ended = endsAtMs !== null && now >= endsAtMs
+        return (
+          <li key={event.id} className={cn('flex gap-3', ended && 'text-muted-foreground')}>
+            <span className="w-20 shrink-0 tabular-nums">{label}</span>
+            <span className="min-w-0 break-words">
+              {event.title ?? '(No title)'}
+              {ended && <span className="sr-only">, ended</span>}
+            </span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
