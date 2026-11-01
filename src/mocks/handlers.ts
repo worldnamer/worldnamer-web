@@ -250,5 +250,33 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return HttpResponse.json({ tasks: tasks.map((t) => ({ id: t.id, text: t.text, done: t.done })) })
   })
 
-  return [list]
+  // One id sequence across every list, as the database has.
+  let nextId = Math.max(0, ...[...byList.values()].flat().map((t) => t.id)) + 1
+  const badRequest = (message = 'Request body is malformed.') =>
+    HttpResponse.json(errorBody('bad_request', message), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Text is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Text as the API stores it: stripped, a missing one as "", or the 422 for over 100 characters.
+  const textFrom = (text: string | null | undefined) => {
+    const stripped = (text ?? '').trim()
+    return [...stripped].length > 100 ? tooLong() : stripped
+  }
+
+  // Appends an unchecked task at the end of the list. Only `text` is read from { task: { text } }; a body without
+  // `task` gets 400.
+  const create = http.post(`${API_BASE}/task_lists/:listId/tasks`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    const body = (await request.json()) as { task?: { text?: string | null } }
+    if (!body.task) return badRequest()
+    const text = textFrom(body.task.text)
+    if (text instanceof Response) return text
+    const created = { id: nextId++, text, done: false }
+    tasks.push(created)
+    return HttpResponse.json({ task: created }, { status: 201 })
+  })
+
+  return [list, create]
 }

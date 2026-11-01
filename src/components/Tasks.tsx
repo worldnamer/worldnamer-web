@@ -189,7 +189,7 @@ export function Tasks() {
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
         {/* Keyed by the list, so another list gets a fresh area and nothing open in this one carries over. */}
-        {selected && mode === 'row' && <TaskArea key={selected.id} list={selected} />}
+        {selected && mode === 'row' && <TaskArea key={selected.id} list={selected} onError={setError} />}
         {data && mode === 'editor' && (
           <TaskListEditor
             lists={data}

@@ -2,13 +2,13 @@
 // queryClient and a mock token; the API is the in-memory taskListsHandlers and tasksHandlers unless a test answers a
 // request itself.
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { API_BASE, REFRESH_TOKEN, taskListsHandlers, tasksHandlers, type MockTask } from '@/mocks/handlers'
+import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers, tasksHandlers, type MockTask } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { Tasks } from './Tasks'
 
@@ -49,6 +49,19 @@ function recordTaskGets() {
     }),
   )
   return ids
+}
+
+// Records every request to `path` with `method` (its path and JSON body) and passes it on, or answers it with
+// `answer` when given. Register it after the handlers that answer, as for recordTaskGets.
+function recordRequests(method: 'post' | 'patch', path: string, answer?: () => Response) {
+  const sent: { path: string; body: unknown }[] = []
+  server.use(
+    http[method](`${API_BASE}${path}`, async ({ request }) => {
+      sent.push({ path: new URL(request.url).pathname, body: await request.clone().json() })
+      return answer?.()
+    }),
+  )
+  return sent
 }
 
 // A gate that holds a handler's answer until the test opens it.
@@ -196,5 +209,246 @@ describe('the height of the tasks area', () => {
     renderTasks()
 
     expect(await screen.findByText(text)).toHaveClass('break-words')
+  })
+})
+
+describe('adding a task', () => {
+  const plus = () => screen.queryByRole('button', { name: 'Add task' })
+  const draft = () => screen.queryByRole('textbox', { name: 'New task' })
+  const refused = (message: string) => () =>
+    HttpResponse.json(errorBody('validation_failed', message), { status: 422 })
+
+  async function openDraft(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Add task' }))
+    return draft() as HTMLInputElement
+  }
+
+  it('shows the + as the last row of the list', async () => {
+    server.use(...both())
+    renderTasks()
+
+    const button = await screen.findByRole('button', { name: 'Add task' })
+    expect(area('Shopping List').lastElementChild).toContainElement(button)
+  })
+
+  it('shows only the + in a list with no tasks, and no message', async () => {
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [] }))
+    renderTasks()
+
+    await screen.findByRole('button', { name: 'Add task' })
+    expect(within(area('Shopping List')).getAllByRole('listitem')).toHaveLength(1)
+    expect(area('Shopping List')).toHaveTextContent(/^$/)
+  })
+
+  it('shows no + with no lists, while the tasks load, or when they failed to load', async () => {
+    const tasksGet = gate()
+    server.use(
+      http.get(`${API_BASE}/task_lists/9/tasks`, () => new HttpResponse(null, { status: 500 })),
+      http.get(`${API_BASE}/task_lists/4/tasks`, () => tasksGet.wait()),
+      ...both(),
+    )
+    const user = userEvent.setup()
+    renderTasks()
+    await screen.findByText('Loading tasks...')
+    expect(plus()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Chores' }))
+    await screen.findByRole('alert')
+    expect(plus()).not.toBeInTheDocument()
+    tasksGet.open()
+  })
+
+  it('shows no + when there are no lists', async () => {
+    server.use(...taskListsHandlers([]), ...tasksHandlers())
+    renderTasks()
+
+    await screen.findByRole('list', { name: 'Task lists' })
+    expect(plus()).not.toBeInTheDocument()
+  })
+
+  it('turns the + row into a draft holding "New Task", focused and selected, with a disabled unchecked box', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+
+    const input = await openDraft(user)
+
+    expect(input).toHaveValue('New Task')
+    expect(input).toHaveFocus()
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 'New Task'.length])
+    const row = area('Shopping List').lastElementChild as HTMLElement
+    expect(row).toContainElement(input)
+    const box = within(row).getByRole('checkbox', { hidden: true })
+    expect(box).toBeDisabled()
+    expect(box).not.toBeChecked()
+    expect(plus()).not.toBeInTheDocument()
+  })
+
+  it('saves on Enter with one POST, even with the blur that follows; the task is last and focus is on the +', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('post', '/task_lists/:listId/tasks')
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread{Enter}')
+
+    expect(await screen.findByRole('checkbox', { name: 'Bread' })).not.toBeChecked()
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs', 'Bread'])
+    expect(draft()).not.toBeInTheDocument()
+    expect(plus()).toHaveFocus()
+    expect(area('Shopping List').lastElementChild).toContainElement(plus())
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks', body: { task: { text: 'Bread' } } }])
+  })
+
+  it('keeps the new task at the bottom after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const { unmount } = renderTasks()
+    await openDraft(user)
+    await user.keyboard('Bread{Enter}')
+    await screen.findByText('Bread')
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+
+    await screen.findByText('Bread')
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs', 'Bread'])
+    expect(area('Shopping List').lastElementChild).toContainElement(plus())
+  })
+
+  it('saves once when focus leaves, and leaves focus where it went', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('post', '/task_lists/:listId/tasks')
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+
+    expect(await screen.findByText('Bread')).toBeInTheDocument()
+    expect(sent).toHaveLength(1)
+    expect(plus()).not.toHaveFocus()
+  })
+
+  it('saves a blank task when the draft is emptied and focus leaves', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('post', '/task_lists/:listId/tasks')
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('{Backspace}')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+
+    expect(await screen.findByRole('checkbox', { name: 'Unnamed task' })).toBeInTheDocument()
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks', body: { task: { text: '' } } }])
+  })
+
+  it('cancels with Escape: sends nothing, and the + comes back with focus', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('post', '/task_lists/:listId/tasks')
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread{Escape}')
+
+    expect(draft()).not.toBeInTheDocument()
+    expect(plus()).toHaveFocus()
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+    expect(sent).toEqual([])
+  })
+
+  it("shows the API's message for a 422, keeps the text, and does not resend on blur until edited", async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests(
+      'post',
+      '/task_lists/:listId/tasks',
+      refused('Text is too long (maximum is 100 characters).'),
+    )
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread{Enter}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Text is too long (maximum is 100 characters).')
+    expect(draft()).toHaveValue('Bread')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+    expect(sent).toHaveLength(1)
+
+    await user.click(draft()!)
+    await user.keyboard('s')
+    await user.click(screen.getByRole('heading', { name: 'Tasks' }))
+    await waitFor(() => expect(sent).toHaveLength(2))
+  })
+
+  it('shows the generic line after a failure, and clears it when the next save starts', async () => {
+    const user = userEvent.setup()
+    let posts = 0
+    server.use(
+      http.post(`${API_BASE}/task_lists/:listId/tasks`, () => {
+        posts += 1
+        if (posts === 1) return new HttpResponse(null, { status: 500 })
+      }),
+      ...both(),
+    )
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't add the task. Try again.")
+    expect(draft()).toHaveValue('Bread')
+
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('Bread')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('refreshes the lists and tasks quietly when the list was deleted elsewhere (404)', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const listGets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+      http.post(`${API_BASE}/task_lists/:listId/tasks`, () =>
+        HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+      ),
+    )
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread{Enter}')
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(listGets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('saves an open draft to its own list when another list is clicked, and not to the new one', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const sent = recordRequests('post', '/task_lists/:listId/tasks')
+    renderTasks()
+
+    await openDraft(user)
+    await user.keyboard('Bread')
+    await user.click(screen.getByRole('button', { name: 'Chores' }))
+
+    await screen.findByText('Sweep')
+    await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks', body: { task: { text: 'Bread' } } }]))
+    expect(taskNames('Chores')).toEqual(['Sweep'])
+    expect(draft()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Shopping List' }))
+    expect(await screen.findByText('Bread')).toBeInTheDocument()
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs', 'Bread'])
   })
 })
