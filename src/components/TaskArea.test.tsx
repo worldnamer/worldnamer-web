@@ -1211,6 +1211,63 @@ describe("a task's due date", () => {
     })
   })
 
+  describe('strike-through', () => {
+    const dateOf = (text: string) => screen.findByText(byWholeText(text))
+
+    it('strikes through the date of a done task, as the text is', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-11-05' }]))
+      renderTasks()
+
+      expect(await dateOf('Due Nov 5')).toHaveClass('line-through')
+      expect(screen.getByRole('button', { name: 'Edit Milk' })).toHaveClass('line-through')
+    })
+
+    it('does not strike through the date of an unchecked task', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+      renderTasks()
+
+      expect(await dateOf('Due Nov 5')).not.toHaveClass('line-through')
+    })
+
+    it('adds the strike-through when the task is checked and removes it when unchecked', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+      renderTasks()
+      const user = userEvent.setup()
+
+      expect(await dateOf('Due Nov 5')).not.toHaveClass('line-through')
+      await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+      expect(await dateOf('Due Nov 5')).toHaveClass('line-through')
+      await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+      expect(await dateOf('Due Nov 5')).not.toHaveClass('line-through')
+    })
+
+    it('strikes through a done task with a past date, muted and not red', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-10-31' }]))
+      renderTasks()
+
+      const date = await dateOf('Due Oct 31')
+      expect(date).toHaveClass('line-through', 'text-muted-foreground')
+      expect(date).not.toHaveClass('text-destructive')
+    })
+
+    it('keeps an overdue unchecked date red and not struck through', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-10-31' }]))
+      renderTasks()
+
+      const date = await dateOf('Overdue, due Oct 31')
+      expect(date).toHaveClass('text-destructive')
+      expect(date).not.toHaveClass('line-through')
+    })
+
+    it('shows no date span for a task with no date', async () => {
+      server.use(...dated([{ id: 1, text: 'Milk', done: true }]))
+      renderTasks()
+
+      await screen.findByRole('checkbox', { name: 'Milk' })
+      expect(rowOf('Milk').querySelector('time')).toBeNull()
+    })
+  })
+
   it('shows the date on the same line, after the task text and before the delete button, never shrinking or wrapping', async () => {
     server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
     renderTasks()
@@ -1235,13 +1292,12 @@ describe("a task's due date", () => {
     expect(rowOf('Milk').querySelector('time')).toBeNull()
   })
 
-  it('keeps the date of a checked task, muted but not struck through', async () => {
+  it('keeps the date of a checked task, muted', async () => {
     server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-11-05' }]))
     renderTasks()
 
     const date = await screen.findByText(byWholeText('Due Nov 5'))
     expect(date).toHaveClass('text-muted-foreground')
-    expect(date).not.toHaveClass('line-through')
   })
 
   it('keeps the date after checking the task', async () => {
