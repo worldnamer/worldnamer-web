@@ -156,3 +156,31 @@ describe('updateTask with done', () => {
     await expect(updateTask(4, 7, { done: false })).resolves.toEqual({ id: 7, text: 'Milk', done: false, due_on: null })
   })
 })
+
+describe('updateTask with due_on', () => {
+  it('sets a due date, sending only due_on, and leaves the text and done', async () => {
+    let body: unknown = null
+    server.use(
+      http.patch(`${API_BASE}/task_lists/4/tasks/7`, async ({ request }) => {
+        body = await request.clone().json()
+      }),
+      ...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: true }] }),
+    )
+    await expect(updateTask(4, 7, { due_on: '2026-11-05' })).resolves.toEqual({
+      id: 7,
+      text: 'Milk',
+      done: true,
+      due_on: '2026-11-05',
+    })
+    expect(body).toEqual({ task: { due_on: '2026-11-05' } })
+    await expect(listTasks(4)).resolves.toEqual([{ id: 7, text: 'Milk', done: true, due_on: '2026-11-05' }])
+  })
+
+  it('rejects with the 400 message for a due_on that is not a YYYY-MM-DD date', async () => {
+    server.use(...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: false }] }))
+    await expect(updateTask(4, 7, { due_on: '2026-02-30' })).rejects.toMatchObject({
+      status: 400,
+      serverMessage: 'due_on must be a date in the form YYYY-MM-DD, or null.',
+    })
+  })
+})

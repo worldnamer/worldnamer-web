@@ -926,12 +926,13 @@ describe('deleting a task', () => {
     expect(button.closest('li')).toHaveClass('group')
   })
 
-  it('is reached with Tab from the task text', async () => {
+  it('is reached with Tab from the task text, after its calendar button', async () => {
     const user = userEvent.setup()
     server.use(...both())
     renderTasks()
 
     ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
+    await user.tab()
     await user.tab()
 
     expect(deleteButton('Delete Milk')).toHaveFocus()
@@ -1191,5 +1192,278 @@ describe("a task's due date", () => {
     await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
     await waitFor(() => expect(queryClient.isMutating()).toBe(0))
     expect(screen.getByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
+  })
+})
+
+describe('setting a due date', () => {
+  // The calendar opens on the current month when there is no date, so the clock is pinned: 1 November 2026, a Sunday,
+  // at noon in Los Angeles.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 1, 12))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const dated = (tasks: MockTask[]) => [...taskListsHandlers(lists), ...tasksHandlers({ 4: tasks })]
+  const byWholeText = (text: string) => (_content: string, element: Element | null) =>
+    element?.tagName === 'SPAN' && element.textContent === text
+  const trigger = (name = 'Due date for Milk') => screen.getByRole('button', { name })
+  const picker = () => screen.queryByRole('dialog', { name: 'Due date for Milk' })
+  // A day in the open calendar, by the start of its accessible name ("Thursday, November 5th, 2026").
+  const day = (label: string) => within(picker()!).getByRole('button', { name: new RegExp(`^(Today, )?${label}`) })
+
+  async function openPicker(user: ReturnType<typeof userEvent.setup>, name = 'Due date for Milk') {
+    await user.click(await screen.findByRole('button', { name }))
+    return screen.findByRole('dialog', { name })
+  }
+
+  it('gives each row a calendar button named for its task, between the date and the delete button', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    renderTasks()
+
+    const date = await screen.findByText(byWholeText('Due Nov 5'))
+    const children = Array.from(date.parentElement!.children)
+    const calendar = trigger()
+    expect(children.indexOf(date)).toBeLessThan(children.indexOf(calendar))
+    expect(children.indexOf(calendar)).toBe(children.length - 2)
+    expect(children.at(-1)).toBe(screen.getByRole('button', { name: 'Delete Milk' }))
+  })
+
+  it('names a blank task\'s calendar button "Due date for task"', async () => {
+    server.use(...dated([{ id: 1, text: '', done: false }]))
+    renderTasks()
+
+    expect(await screen.findByRole('button', { name: 'Due date for task' })).toBeInTheDocument()
+  })
+
+  it('hides the calendar button only where the device can hover, and keeps it shown while its picker is open', async () => {
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    renderTasks()
+
+    expect(await screen.findByRole('button', { name: 'Due date for Milk' })).toHaveClass(
+      'can-hover:opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100',
+      'focus-visible:opacity-100',
+      'data-[state=open]:opacity-100',
+    )
+  })
+
+  it('is reached with Tab between the task text and the delete button', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    renderTasks()
+
+    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
+    await user.tab()
+    expect(trigger()).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Delete Milk' })).toHaveFocus()
+  })
+
+  it("opens on the current month when the task has no date, with today's day focused", async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    renderTasks()
+
+    const dialog = await openPicker(user)
+    expect(within(dialog).getByRole('grid', { name: 'November 2026' })).toBeInTheDocument()
+    await waitFor(() => expect(day('Sunday, November 1st, 2026')).toHaveFocus())
+  })
+
+  it("opens on the due date's month, with that day selected and focused", async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2027-03-10' }]))
+    renderTasks()
+
+    const dialog = await openPicker(user)
+    expect(within(dialog).getByRole('grid', { name: 'March 2027' })).toBeInTheDocument()
+    const selected = day('Wednesday, March 10th, 2027')
+    expect(selected).toHaveAccessibleName('Wednesday, March 10th, 2027, selected')
+    await waitFor(() => expect(selected).toHaveFocus())
+  })
+
+  it('saves a picked day with a PATCH of only due_on, closes, shows the date and returns focus to the button', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+
+    expect(picker()).not.toBeInTheDocument()
+    expect(await screen.findByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: '2026-11-05' } } }])
+    expect(trigger()).toHaveFocus()
+  })
+
+  it('saves the day picked, not the day before, late in the evening', async () => {
+    // 23:30 in Los Angeles is already the next day in UTC.
+    vi.setSystemTime(new Date(2026, 10, 1, 23, 30))
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Sunday, November 1st, 2026'))
+
+    await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: '2026-11-01' } } }]))
+    expect(await screen.findByText(byWholeText('Due Nov 1'))).toBeInTheDocument()
+  })
+
+  it('picks a day with the keyboard', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    ;(await screen.findByRole('button', { name: 'Due date for Milk' })).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(day('Sunday, November 1st, 2026')).toHaveFocus())
+    await user.keyboard('{ArrowRight}{ArrowRight}{Enter}')
+
+    expect(await screen.findByText(byWholeText('Due Nov 3'))).toBeInTheDocument()
+    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: '2026-11-03' } } }])
+  })
+
+  it('keeps the date after a reload', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const { unmount } = renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+    await screen.findByText(byWholeText('Due Nov 5'))
+
+    unmount()
+    queryClient.clear()
+    renderTasks()
+    expect(await screen.findByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
+  })
+
+  it('closes on Escape without saving, and returns focus to the button', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await openPicker(user)
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(picker()).not.toBeInTheDocument())
+    expect(trigger()).toHaveFocus()
+    expect(sent).toEqual([])
+  })
+
+  it('sends nothing when the day already set is clicked', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+
+    expect(picker()).not.toBeInTheDocument()
+    expect(sent).toEqual([])
+  })
+
+  it.each([
+    ['Milk', 'Due date for Milk', "Couldn't save the due date for 'Milk'. Try again."],
+    ['', 'Due date for task', "Couldn't save the due date for this task. Try again."],
+  ])('shows no date and says so on the line after a failure, for task %j', async (text, name, message) => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text, done: false }]))
+    recordRequests('patch', '/task_lists/:listId/tasks/:id', () => new HttpResponse(null, { status: 500 }))
+    renderTasks()
+
+    await openPicker(user, name)
+    await user.click(within(screen.getByRole('dialog', { name })).getByRole('button', { name: /November 5th, 2026/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument()
+  })
+
+  it('refreshes the lists and tasks quietly when the task or list was deleted elsewhere (404)', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const gets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+    )
+    recordRequests('patch', '/task_lists/:listId/tasks/:id', () =>
+      HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }),
+    )
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(gets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not undo a check or an edit made while the date was saving', async () => {
+    const user = userEvent.setup()
+    const dateAnswer = gate()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request }) => {
+        const body = (await request.clone().json()) as { task: { due_on?: string } }
+        if (body.task.due_on === undefined) return undefined
+        // The date's answer was read before the check and the edit landed, so it still has the old text and done.
+        await dateAnswer.wait()
+        return HttpResponse.json({ task: { id: 1, text: 'Milk', done: false, due_on: '2026-11-05' } })
+      }),
+    )
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+    await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Milk' }))
+    await user.keyboard('{Control>}a{/Control}Oat milk{Enter}')
+    await screen.findByRole('button', { name: 'Edit Oat milk' })
+    dateAnswer.open()
+
+    expect(await screen.findByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(screen.getByRole('checkbox', { name: 'Oat milk' })).toBeChecked()
+  })
+
+  it('sends two quick picks one after the other, in order, and shows the last', async () => {
+    const user = userEvent.setup()
+    const first = gate()
+    const bodies: unknown[] = []
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    server.use(
+      http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request }) => {
+        bodies.push(await request.clone().json())
+        if (bodies.length === 1) await first.wait()
+        return undefined
+      }),
+    )
+    renderTasks()
+
+    await openPicker(user)
+    await user.click(day('Thursday, November 5th, 2026'))
+    await openPicker(user)
+    await user.click(day('Friday, November 6th, 2026'))
+
+    expect(bodies).toHaveLength(1) // the second waits for the first to settle
+    first.open()
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies).toEqual([{ task: { due_on: '2026-11-05' } }, { task: { due_on: '2026-11-06' } }])
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(screen.getByText(byWholeText('Due Nov 6'))).toBeInTheDocument()
   })
 })
