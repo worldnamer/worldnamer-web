@@ -8,6 +8,7 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { TaskItem } from '@/components/TaskItem'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
+import { toIso } from '@/lib/isoDate'
 import { refusal } from '@/lib/refusal'
 import { accessibleListName } from '@/lib/taskListNames'
 import { isBlankText } from '@/lib/taskText'
@@ -33,6 +34,9 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
   // Due dates show their year only outside this one. The clock is read once, when the area mounts, rather than in
   // each row's render: reading it during render is impure, and once per row would be wasted work.
   const [currentYear] = useState(() => new Date().getFullYear())
+  // Today's local date, read once like the year, so a row can tell whether its due date has passed. No timer: a page
+  // left open past midnight keeps the day it loaded on.
+  const [today] = useState(() => toIso(new Date()))
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
@@ -131,6 +135,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
               task={task}
               listId={list.id}
               currentYear={currentYear}
+              today={today}
               onError={onError}
               onAskToDelete={askToDelete}
               deleting={deletingIds.includes(task.id)}

@@ -36,6 +36,7 @@ export function TaskItem({
   task,
   listId,
   currentYear,
+  today,
   onError,
   onAskToDelete,
   deleting,
@@ -43,6 +44,7 @@ export function TaskItem({
   task: Task
   listId: number
   currentYear: number
+  today: string
   onError: (message: string | null) => void
   onAskToDelete: (task: Task, button: HTMLElement) => void
   deleting: boolean
@@ -202,6 +204,9 @@ export function TaskItem({
 
   const dueDateLabel = isBlankText(task.text) ? 'Due date for task' : `Due date for ${task.text}`
 
+  // Overdue is strictly before today; the 'YYYY-MM-DD' strings sort in date order. A done task is never overdue.
+  const overdue = !!task.due_on && !task.done && task.due_on < today
+
   return (
     // `group` lets the row's icons reveal themselves while the row is hovered or holds focus.
     <li className="group flex items-start gap-2">
@@ -243,8 +248,14 @@ export function TaskItem({
       )}
       {task.due_on && (
         // leading-8 centres the date on the row's 32px line. It never shrinks or wraps; the text gives way instead.
-        <span className="shrink-0 text-sm leading-8 whitespace-nowrap text-muted-foreground">
-          <span className="sr-only">Due </span>
+        <span
+          className={cn(
+            'shrink-0 text-sm leading-8 whitespace-nowrap',
+            overdue ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {/* Colour says nothing to a screen reader, so an overdue date is announced as such. */}
+          <span className="sr-only">{overdue ? 'Overdue, due ' : 'Due '}</span>
           <time dateTime={task.due_on}>{formatDueDate(task.due_on, currentYear)}</time>
         </span>
       )}
