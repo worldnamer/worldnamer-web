@@ -53,6 +53,7 @@ import {
   errorBody,
   habitsHandlers,
   taskListsHandlers,
+  tasksHandlers,
 } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
@@ -95,7 +96,7 @@ function gate() {
 // Logged in the way John is on a reload: flag set, refresh answers 200.
 async function renderLoggedIn(route = '/') {
   setSessionFlag()
-  server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
+  server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
   renderApp(route)
   return screen.findByRole('button', { name: 'Account menu' })
 }
@@ -210,7 +211,7 @@ describe('login form', () => {
 
   it('can be submitted with Enter from the password field', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -280,7 +281,7 @@ describe('login form', () => {
 describe('successful login', () => {
   it('closes the modal, swaps Login for the account menu and shows the logged-in view', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -295,7 +296,7 @@ describe('successful login', () => {
 
   it('shows the username as plain text, then Log out, in the menu', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -324,6 +325,7 @@ describe('log out', () => {
       refreshHandler,
       ...habitsHandlers(),
       ...taskListsHandlers(),
+      ...tasksHandlers(),
       http.delete(`${API_BASE}/session`, () => {
         deleted += 1
         return new HttpResponse(null, { status: 204 })
@@ -346,7 +348,7 @@ describe('log out', () => {
     ['a network error', () => HttpResponse.error()],
   ])('still logs out when the DELETE fails with %s', async (_label, answer) => {
     setSessionFlag()
-    server.use(refreshHandler, ...habitsHandlers(), ...taskListsHandlers(), http.delete(`${API_BASE}/session`, answer))
+    server.use(refreshHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers(), http.delete(`${API_BASE}/session`, answer))
     renderApp()
 
     await openMenuAndLogOut()
@@ -400,6 +402,7 @@ describe('session restore on page load', () => {
     server.use(
       ...habitsHandlers(),
       ...taskListsHandlers(),
+      ...tasksHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened
@@ -452,6 +455,7 @@ describe('habit list', () => {
       }),
       ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
       ...taskListsHandlers(),
+      ...tasksHandlers(),
     )
     renderApp()
     expect(await screen.findByText('Stretch')).toBeInTheDocument()
@@ -487,6 +491,7 @@ describe('/resume in every auth state', () => {
     server.use(
       ...habitsHandlers(),
       ...taskListsHandlers(),
+      ...tasksHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
         g.arrived()
         await g.opened

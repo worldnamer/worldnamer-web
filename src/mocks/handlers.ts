@@ -230,3 +230,25 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
 
   return [list, create, rename, reorder, remove]
 }
+
+// The tasks, kept per list. tasksHandlers(initialByList) keeps one in-memory store, keyed by list id, that its
+// handlers share, so a change shows up in the next GET. A list id that is not a key gets the API's 404, as a missing
+// list or someone else's does. It does not see taskListsHandlers' store, so deleting a list there leaves its tasks here.
+// Opt-in like the others: server.use(...tasksHandlers({ 4: [{ id: 1, text: 'Milk', done: false }] })).
+export type MockTask = { id: number; text: string; done: boolean }
+
+export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
+  const byList = new Map<string, MockTask[]>(
+    Object.entries(initialByList).map(([listId, tasks]) => [listId, tasks.map((t) => ({ ...t }))]),
+  )
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+  const list = http.get(`${API_BASE}/task_lists/:listId/tasks`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    return HttpResponse.json({ tasks: tasks.map((t) => ({ id: t.id, text: t.text, done: t.done })) })
+  })
+
+  return [list]
+}
