@@ -26,6 +26,8 @@ function TodayEventList({ items }: { items: TodayEvent[] }) {
   // Read once when the list appears; a later change adds a clock that keeps it current.
   const [now] = useState(() => new Date())
   const rows = eventsOnDay(items, now)
+  // Also the answer when the API sent events only for other days, or when every event of the day was filtered out.
+  if (rows.length === 0) return <p className="text-muted-foreground">Nothing on your calendar today.</p>
   return (
     <ul className="grid gap-1">
       {rows.map(({ event, label }) => (
