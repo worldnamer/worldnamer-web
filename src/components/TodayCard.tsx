@@ -72,6 +72,8 @@ export function TodayCard() {
           </p>
         )}
         {data === 'connected' && <p>Google Calendar connected.</p>}
+        {/* A message about the connect attempt just made is more recent than the stored state, so it replaces this line. */}
+        {data === 'lost' && outcome === null && <p>The connection to Google Calendar was lost.</p>}
         {(data === 'not_connected' || data === 'lost') && (
           <Button className="justify-self-start" disabled={start.isPending || start.isSuccess} onClick={() => {
               setOutcome(null)

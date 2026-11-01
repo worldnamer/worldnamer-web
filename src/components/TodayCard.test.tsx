@@ -311,4 +311,31 @@ describe('TodayCard', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
   })
+
+  describe('lost connection', () => {
+    it('shows the lost line with the Connect button', async () => {
+      server.use(...googleCalendarHandlers('lost'))
+      renderCard()
+
+      expect(await screen.findByText('The connection to Google Calendar was lost.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
+      expect(screen.queryByText('Google Calendar connected.')).not.toBeInTheDocument()
+    })
+
+    it.each(['not_connected', 'connected'] as const)('does not show the lost line when %s', async (status) => {
+      server.use(...googleCalendarHandlers(status))
+      renderCard()
+      await vi.waitFor(() => expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument())
+      expect(screen.queryByText('The connection to Google Calendar was lost.')).not.toBeInTheDocument()
+    })
+
+    it('lets an outcome message replace the lost line', async () => {
+      server.use(...googleCalendarHandlers('lost'))
+      renderCard('/?google_calendar=failed')
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't connect Google Calendar. Try again.")
+      await screen.findByRole('button', { name: 'Connect Google Calendar' })
+      expect(screen.queryByText('The connection to Google Calendar was lost.')).not.toBeInTheDocument()
+    })
+  })
 })
