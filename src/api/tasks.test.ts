@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN, tasksHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createTask, listTasks } from './tasks'
+import { createTask, listTasks, updateTask } from './tasks'
 
 beforeEach(() => {
   clearAccessToken()
@@ -79,5 +79,32 @@ describe('createTask', () => {
       ),
     )
     await expect(createTask(5, 'Bread')).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('updateTask', () => {
+  it('sends only the changes given, to the task in its list, and resolves the task as saved', async () => {
+    let body: unknown = null
+    server.use(
+      http.patch(`${API_BASE}/task_lists/4/tasks/7`, async ({ request }) => {
+        body = await request.clone().json()
+      }),
+      ...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: true }] }),
+    )
+    await expect(updateTask(4, 7, { text: ' Oat milk ' })).resolves.toEqual({ id: 7, text: 'Oat milk', done: true })
+    expect(body).toEqual({ task: { text: ' Oat milk ' } })
+  })
+
+  it('rejects with the status of a 404 for a task that is not in the list', async () => {
+    server.use(...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: false }], 5: [] }))
+    await expect(updateTask(5, 7, { text: 'x' })).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('rejects with the message of a 422', async () => {
+    server.use(...tasksHandlers({ 4: [{ id: 7, text: 'Milk', done: false }] }))
+    await expect(updateTask(4, 7, { text: 'x'.repeat(101) })).rejects.toMatchObject({
+      status: 422,
+      serverMessage: 'Text is too long (maximum is 100 characters).',
+    })
   })
 })
