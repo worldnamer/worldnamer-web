@@ -282,17 +282,31 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return HttpResponse.json({ task: json(created) }, { status: 201 })
   })
 
-  // Changes a task in the list: `text` and `done` if sent, the rest left as it is. A task that is not in this list gets
-  // the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one, gets 400,
-  // and so does a `done` that is not a JSON true or false.
+  // True for null or a real day written YYYY-MM-DD from 1900-01-01 to 9999-12-31, the due dates the API accepts.
+  // Written apart from src/lib/isoDate.ts on purpose, so a mistake there cannot hide behind the same mistake here.
+  const validDueOn = (value: unknown) => {
+    if (value === null) return true
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const [y, m, d] = value.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
+    const real = date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
+    return real && y >= 1900
+  }
+
+  // Changes a task in the list: `text`, `done` and `due_on` if sent, the rest left as it is. A task that is not in this
+  // list gets the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one,
+  // gets 400, and so does a `done` that is not a JSON true or false or a `due_on` that is not a date or null.
   const update = http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request, params }) => {
     if (!hasMockToken(request)) return unauthenticated()
     const found = byList.get(String(params.listId))?.find((t) => String(t.id) === params.id)
     if (!found) return notFound()
-    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown } }
+    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown; due_on?: unknown } }
     if (!body.task || Object.keys(body.task).length === 0) return badRequest()
-    const { done } = body.task
+    const { done, due_on } = body.task
     if ('done' in body.task && typeof done !== 'boolean') return badRequest('done must be true or false.')
+    if ('due_on' in body.task && !validDueOn(due_on)) {
+      return badRequest('due_on must be a date in the form YYYY-MM-DD, or null.')
+    }
     let text = found.text
     if ('text' in body.task) {
       const stripped = textFrom(body.task.text)
@@ -301,6 +315,7 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     }
     found.text = text
     if (typeof done === 'boolean') found.done = done
+    if ('due_on' in body.task) found.due_on = due_on as string | null
     return HttpResponse.json({ task: json(found) })
   })
 
