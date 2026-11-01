@@ -51,6 +51,7 @@ import {
   refreshHandler,
   tokenBody,
   errorBody,
+  googleCalendarHandlers,
   habitsHandlers,
   taskListsHandlers,
   tasksHandlers,
@@ -96,7 +97,7 @@ function gate() {
 // Logged in the way John is on a reload: flag set, refresh answers 200.
 async function renderLoggedIn(route = '/') {
   setSessionFlag()
-  server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
+  server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
   renderApp(route)
   return screen.findByRole('button', { name: 'Account menu' })
 }
@@ -211,7 +212,7 @@ describe('login form', () => {
 
   it('can be submitted with Enter from the password field', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -281,7 +282,7 @@ describe('login form', () => {
 describe('successful login', () => {
   it('closes the modal, swaps Login for the account menu and shows the logged-in view', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -296,7 +297,7 @@ describe('successful login', () => {
 
   it('shows the username as plain text, then Log out, in the menu', async () => {
     const user = userEvent.setup()
-    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers())
+    server.use(loginHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
     renderApp()
 
     const dialog = await openLoginDialog(user)
@@ -324,6 +325,7 @@ describe('log out', () => {
     server.use(
       refreshHandler,
       ...habitsHandlers(),
+      ...googleCalendarHandlers(),
       ...taskListsHandlers(),
       ...tasksHandlers(),
       http.delete(`${API_BASE}/session`, () => {
@@ -348,7 +350,7 @@ describe('log out', () => {
     ['a network error', () => HttpResponse.error()],
   ])('still logs out when the DELETE fails with %s', async (_label, answer) => {
     setSessionFlag()
-    server.use(refreshHandler, ...habitsHandlers(), ...taskListsHandlers(), ...tasksHandlers(), http.delete(`${API_BASE}/session`, answer))
+    server.use(refreshHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers(), http.delete(`${API_BASE}/session`, answer))
     renderApp()
 
     await openMenuAndLogOut()
@@ -401,6 +403,7 @@ describe('session restore on page load', () => {
     setSessionFlag()
     server.use(
       ...habitsHandlers(),
+      ...googleCalendarHandlers(),
       ...taskListsHandlers(),
       ...tasksHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
@@ -454,6 +457,7 @@ describe('habit list', () => {
         fetches += 1
       }),
       ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
+      ...googleCalendarHandlers(),
       ...taskListsHandlers(),
       ...tasksHandlers(),
     )
@@ -490,6 +494,7 @@ describe('/resume in every auth state', () => {
     setSessionFlag()
     server.use(
       ...habitsHandlers(),
+      ...googleCalendarHandlers(),
       ...taskListsHandlers(),
       ...tasksHandlers(),
       http.post(`${API_BASE}/session/refresh`, async () => {
