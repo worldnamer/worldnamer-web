@@ -301,7 +301,7 @@ export function Habits() {
   }
 
   return (
-    <section aria-labelledby="habits-heading" className="w-full lg:w-1/2">
+    <section aria-labelledby="habits-heading" className="w-full">
       <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
         <h2 id="habits-heading" className="font-display text-xl tracking-wide">
           Habits

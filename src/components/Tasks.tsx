@@ -154,7 +154,7 @@ export function Tasks() {
   })
 
   return (
-    <section aria-labelledby="tasks-heading" className="w-full lg:w-1/2">
+    <section aria-labelledby="tasks-heading" className="w-full">
       {/* min-h-10 matches the Habits heading row, whose icon buttons make it that tall. */}
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
         <h2 id="tasks-heading" className="font-display text-xl tracking-wide">
