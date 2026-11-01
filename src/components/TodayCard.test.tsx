@@ -108,8 +108,8 @@ describe('TodayCard', () => {
     const items = await screen.findAllByRole('listitem')
     expect(items.map((li) => li.textContent)).toEqual([
       expect.stringMatching(/^All dayHoliday$/),
-      expect.stringMatching(/^9:00\sAMDentist$/),
-      expect.stringMatching(/^11:00\sAM\(No title\)$/),
+      expect.stringMatching(/^9:00\sAMDentist, ended$/),
+      expect.stringMatching(/^11:00\sAM\(No title\), ended$/),
       expect.stringMatching(/^6:30\sPMDinner$/),
     ])
   })
@@ -123,7 +123,7 @@ describe('TodayCard', () => {
     )
     renderCard()
     const [conference, flight] = await screen.findAllByRole('listitem')
-    expect(flight.textContent).toMatch(/^Until 2:00\sAMFlight$/)
+    expect(flight.textContent).toMatch(/^Until 2:00\sAMFlight, ended$/)
     expect(conference.textContent).toBe('All dayConference')
   })
 
@@ -164,6 +164,95 @@ describe('TodayCard', () => {
     renderCard()
     await settled()
     expect(screen.queryByText('Nothing on your calendar today.')).not.toBeInTheDocument()
+  })
+
+  describe('with a running clock', () => {
+    // Fake timers with MSW: only the timers the card uses and Date are faked, and vi.waitFor advances them.
+    const useClock = (now: Date) => {
+      vi.useRealTimers()
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'], now })
+    }
+    const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+
+    it('dims an event that has ended, with hidden ", ended" text, and leaves ongoing, later and all-day events alone', async () => {
+      useClock(new Date(2026, 10, 1, 12, 0))
+      server.use(
+        ...googleCalendarHandlers('connected', [
+          allDayEvent('a', 'Holiday', '2026-11-01', '2026-11-02'),
+          timedEvent('t1', 'Breakfast', '2026-11-01T08:00:00-08:00', '2026-11-01T09:00:00-08:00'),
+          timedEvent('t2', 'Lunch', '2026-11-01T11:30:00-08:00', '2026-11-01T12:30:00-08:00'),
+          timedEvent('t3', 'Dinner', '2026-11-01T18:30:00-08:00', '2026-11-01T20:00:00-08:00'),
+        ]),
+      )
+      renderCard()
+      await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(4))
+      const [holiday, breakfast, lunch, dinner] = screen.getAllByRole('listitem')
+      expect(breakfast).toHaveClass('text-muted-foreground')
+      expect(breakfast).toHaveTextContent(/Breakfast, ended$/)
+      expect(within(breakfast).getByText(', ended')).toHaveClass('sr-only')
+      for (const li of [holiday, lunch, dinner]) {
+        expect(li).not.toHaveClass('text-muted-foreground')
+        expect(li).not.toHaveTextContent('ended')
+      }
+    })
+
+    it('treats an event as ended at the moment it ends', async () => {
+      useClock(new Date(2026, 10, 1, 12, 30))
+      server.use(
+        ...googleCalendarHandlers('connected', [
+          timedEvent('t', 'Lunch', '2026-11-01T11:30:00-08:00', '2026-11-01T12:30:00-08:00'),
+        ]),
+      )
+      renderCard()
+      await vi.waitFor(() => expect(screen.getByRole('listitem')).toHaveTextContent(', ended'))
+    })
+
+    it('dims an event once the clock passes its end, with no new request', async () => {
+      useClock(new Date(2026, 10, 1, 12, 0))
+      let requests = 0
+      server.use(
+        http.get(`${API_BASE}/google_calendar_connection/events`, () => {
+          requests += 1
+          return HttpResponse.json(
+            eventsBody('connected', [timedEvent('t', 'Lunch', '2026-11-01T12:15:00-08:00', '2026-11-01T12:30:00-08:00')]),
+          )
+        }),
+      )
+      renderCard()
+      await vi.waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument())
+      expect(screen.getByRole('listitem')).not.toHaveClass('text-muted-foreground')
+
+      await tick(31 * 60_000)
+      expect(screen.getByRole('listitem')).toHaveClass('text-muted-foreground')
+      expect(screen.getByRole('listitem')).toHaveTextContent(', ended')
+      expect(requests).toBe(1)
+    })
+
+    it('changes the day at local midnight with no new request', async () => {
+      useClock(new Date(2026, 10, 1, 23, 30))
+      let requests = 0
+      const events = [
+        timedEvent('today', 'Late show', '2026-11-01T23:45:00-08:00', '2026-11-02T00:30:00-08:00'),
+        timedEvent('next', 'Morning run', '2026-11-02T07:00:00-08:00', '2026-11-02T08:00:00-08:00'),
+      ]
+      server.use(
+        http.get(`${API_BASE}/google_calendar_connection/events`, () => {
+          requests += 1
+          return HttpResponse.json(eventsBody('connected', events))
+        }),
+      )
+      renderCard()
+      await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+      expect(screen.getByRole('listitem')).toHaveTextContent(/^11:45\sPMLate show$/)
+
+      // Past midnight the same answer is read as the next day: the show now began before today, and the run is added.
+      await tick(31 * 60_000)
+      expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        expect.stringMatching(/^Until 12:30\sAMLate show$/),
+        expect.stringMatching(/^7:00\sAMMorning run$/),
+      ])
+      expect(requests).toBe(1)
+    })
   })
 
   it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
