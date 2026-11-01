@@ -9,7 +9,7 @@ import App from './App'
 import { setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { habitsHandlers, refreshHandler, taskListsHandlers } from '@/mocks/handlers'
+import { habitsHandlers, refreshHandler, taskListsHandlers, tasksHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
 beforeEach(() => {
@@ -23,13 +23,14 @@ afterEach(() => {
   queryClient.clear()
 })
 
-it('shows the habit grid and the task lists after a reload without React warning about a state update during render', async () => {
+it("shows the habit grid, the task lists and the first list's tasks after a reload without React warning about a state update during render", async () => {
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
   setSessionFlag()
   server.use(
     refreshHandler,
     ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
     ...taskListsHandlers([{ id: 1, name: 'Chores' }]),
+    ...tasksHandlers({ 1: [{ id: 1, text: 'Sweep', done: false }] }),
   )
 
   render(
@@ -41,6 +42,7 @@ it('shows the habit grid and the task lists after a reload without React warning
   )
   await screen.findByText('Stretch')
   await screen.findByRole('button', { name: 'Chores' })
+  await screen.findByText('Sweep')
 
   expect(consoleError).not.toHaveBeenCalled()
 })

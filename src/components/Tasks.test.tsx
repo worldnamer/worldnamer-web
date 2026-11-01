@@ -1,5 +1,6 @@
 // The Tasks card. The component is rendered alone with the real queryClient and a mock token; the API is the
-// in-memory taskListsHandlers unless a test answers a request itself.
+// in-memory taskListsHandlers unless a test answers a request itself. Every list has no tasks here; the tasks area has
+// its own tests in TaskArea.test.tsx.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,6 +24,7 @@ beforeEach(() => {
   queryClient.clear()
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
+  server.use(http.get(`${API_BASE}/task_lists/:listId/tasks`, () => HttpResponse.json({ tasks: [] })))
 })
 
 const rowList = () => screen.getByRole('list', { name: 'Task lists' })
@@ -1177,6 +1179,28 @@ describe('deleting a list in the editor', () => {
     await waitFor(() => expect(nameBoxes()).toEqual(['Shopping List', 'Vertex Rim']))
     await waitFor(() => expect(gets).toBe(2))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['204', () => new HttpResponse(null, { status: 204 })],
+    ['404', () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })],
+  ])("removes the deleted list's cached tasks, and only those, after a %s", async (_status, answer) => {
+    const user = userEvent.setup()
+    server.use(http.delete(`${API_BASE}/task_lists/:id`, answer), ...taskListsHandlers(shopping))
+    renderTasks()
+    // Visit Chores, then Vertex Rim, so three lists' tasks are cached.
+    await user.click(await screen.findByRole('button', { name: 'Chores' }))
+    await screen.findByRole('list', { name: 'Chores tasks' })
+    await user.click(screen.getByRole('button', { name: 'Vertex Rim' }))
+    await screen.findByRole('list', { name: 'Vertex Rim tasks' })
+    await openEditor(user)
+
+    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(queryClient.getQueryState(['tasks', 9])).toBeUndefined())
+    expect(queryClient.getQueryData(['tasks', 4])).toEqual([])
+    expect(queryClient.getQueryData(['tasks', 2])).toEqual([])
   })
 
   it.each([

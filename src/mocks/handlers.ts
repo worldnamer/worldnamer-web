@@ -230,3 +230,75 @@ export function taskListsHandlers(initial: MockTaskList[] = []) {
 
   return [list, create, rename, reorder, remove]
 }
+
+// The tasks, kept per list. tasksHandlers(initialByList) keeps one in-memory store, keyed by list id, that its
+// handlers share, so a change shows up in the next GET. A list id that is not a key gets the API's 404, as a missing
+// list or someone else's does. It does not see taskListsHandlers' store, so deleting a list there leaves its tasks here.
+// Opt-in like the others: server.use(...tasksHandlers({ 4: [{ id: 1, text: 'Milk', done: false }] })).
+export type MockTask = { id: number; text: string; done: boolean }
+
+export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
+  const byList = new Map<string, MockTask[]>(
+    Object.entries(initialByList).map(([listId, tasks]) => [listId, tasks.map((t) => ({ ...t }))]),
+  )
+  const notFound = () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+  const list = http.get(`${API_BASE}/task_lists/:listId/tasks`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    return HttpResponse.json({ tasks: tasks.map((t) => ({ id: t.id, text: t.text, done: t.done })) })
+  })
+
+  // One id sequence across every list, as the database has.
+  let nextId = Math.max(0, ...[...byList.values()].flat().map((t) => t.id)) + 1
+  const badRequest = (message = 'Request body is malformed.') =>
+    HttpResponse.json(errorBody('bad_request', message), { status: 400 })
+  const tooLong = () =>
+    HttpResponse.json(errorBody('validation_failed', 'Text is too long (maximum is 100 characters).'), { status: 422 })
+
+  // Text as the API stores it: stripped, a missing one as "", or the 422 for over 100 characters.
+  const textFrom = (text: string | null | undefined) => {
+    const stripped = (text ?? '').trim()
+    return [...stripped].length > 100 ? tooLong() : stripped
+  }
+
+  // Appends an unchecked task at the end of the list. Only `text` is read from { task: { text } }; a body without
+  // `task` gets 400.
+  const create = http.post(`${API_BASE}/task_lists/:listId/tasks`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    const body = (await request.json()) as { task?: { text?: string | null } }
+    if (!body.task) return badRequest()
+    const text = textFrom(body.task.text)
+    if (text instanceof Response) return text
+    const created = { id: nextId++, text, done: false }
+    tasks.push(created)
+    return HttpResponse.json({ task: created }, { status: 201 })
+  })
+
+  // Changes a task in the list: `text` and `done` if sent, the rest left as it is. A task that is not in this list gets
+  // the 404 a missing one does, even when it is in another list; a body without `task`, or with an empty one, gets 400,
+  // and so does a `done` that is not a JSON true or false.
+  const update = http.patch(`${API_BASE}/task_lists/:listId/tasks/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = byList.get(String(params.listId))?.find((t) => String(t.id) === params.id)
+    if (!found) return notFound()
+    const body = (await request.json()) as { task?: { text?: string | null; done?: unknown } }
+    if (!body.task || Object.keys(body.task).length === 0) return badRequest()
+    const { done } = body.task
+    if ('done' in body.task && typeof done !== 'boolean') return badRequest('done must be true or false.')
+    let text = found.text
+    if ('text' in body.task) {
+      const stripped = textFrom(body.task.text)
+      if (stripped instanceof Response) return stripped
+      text = stripped
+    }
+    found.text = text
+    if (typeof done === 'boolean') found.done = done
+    return HttpResponse.json({ task: { id: found.id, text: found.text, done: found.done } })
+  })
+
+  return [list, create, update]
+}

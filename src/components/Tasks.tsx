@@ -10,6 +10,7 @@ import {
   reorderTaskLists,
   type TaskList,
 } from '@/api/taskLists'
+import { TaskArea } from '@/components/TaskArea'
 import { TaskListEditor } from '@/components/TaskListEditor'
 import { TaskListRow } from '@/components/TaskListRow'
 import { Button } from '@/components/ui/button'
@@ -143,6 +144,8 @@ export function Tasks() {
     onMutate: () => setError(null),
     onSuccess: (_result, list) => {
       queryClient.setQueryData<TaskList[]>(['task_lists'], (old) => old?.filter((l) => l.id !== list.id))
+      // Its tasks go with it. Only this list's entry: the other lists' cached tasks stay.
+      queryClient.removeQueries({ queryKey: ['tasks', list.id], exact: true })
       // Fetch again too, so a 404 (already deleted elsewhere) or another tab's changes show up.
       void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
     },
@@ -185,6 +188,8 @@ export function Tasks() {
         {data && mode === 'row' && (
           <TaskListRow lists={data} selectedId={selected?.id ?? null} onSelect={setSelectedId} onAdd={addList} />
         )}
+        {/* Keyed by the list, so another list gets a fresh area and nothing open in this one carries over. */}
+        {selected && mode === 'row' && <TaskArea key={selected.id} list={selected} onError={setError} />}
         {data && mode === 'editor' && (
           <TaskListEditor
             lists={data}
