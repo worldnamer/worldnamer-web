@@ -4,21 +4,23 @@ import { cn } from '@/lib/utils'
 const inputClass =
   'h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
-// A text box for a list's name, used for a new list and for renaming one. Enter saves, and so does focus leaving,
-// even with the box empty: a blank name is a valid list. Escape either cancels (when onCancel is given, as for a new
-// list) or puts the saved name back.
+// A text box for a list's name or a task's text, used for a new one and for changing one. `name` is the text it starts
+// with and `label` its accessible name. Enter saves, and so does focus leaving, even with the box empty: blank text is
+// valid for both. Escape either cancels (when onCancel is given, as for a new list) or puts the saved text back.
 //
-// `onSave` gets the text and whether Enter sent it. It resolves the name as saved (the API strips surrounding spaces),
+// `onSave` gets the text and whether Enter sent it. It resolves the text as saved (the API strips surrounding spaces),
 // which the box then shows, or null if the save failed; the card shows why. After a failure the text stays as typed,
 // and focus leaving does not send it again until it is edited; Enter does.
 export function TaskListNameInput({
   name,
+  label = 'List name',
   onSave,
   onCancel,
   autoFocus = false,
   className,
 }: {
   name: string
+  label?: string
   onSave: (text: string, viaEnter: boolean) => Promise<string | null>
   onCancel?: () => void
   autoFocus?: boolean
@@ -31,7 +33,7 @@ export function TaskListNameInput({
   const busy = useRef(false)
   const refused = useRef(false)
 
-  // A new list's box takes focus with its text selected, so typing replaces it.
+  // A new item's box takes focus with its text selected, so typing replaces it.
   useEffect(() => {
     if (!autoFocus) return
     inputRef.current?.focus()
@@ -69,7 +71,7 @@ export function TaskListNameInput({
     <input
       ref={inputRef}
       type="text"
-      aria-label="List name"
+      aria-label={label}
       autoComplete="off"
       className={cn(inputClass, className)}
       value={text}
