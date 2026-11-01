@@ -5,9 +5,9 @@ import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, CONSENT_URL, errorBody, googleCalendarHandlers, REFRESH_TOKEN, type MockConnectionStatus } from '@/mocks/handlers'
+import { API_BASE, CONSENT_URL, errorBody, eventsBody, googleCalendarHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
-import { getGoogleCalendarConnection } from '@/api/googleCalendarConnection'
+import { getTodayEvents } from '@/api/googleCalendarConnection'
 import { navigateTo } from '@/lib/externalNavigation'
 import { TodayCard } from './TodayCard'
 
@@ -62,7 +62,21 @@ describe('TodayCard', () => {
     expect(body).toHaveClass('border-b', 'border-border', 'py-2')
   })
 
-  it('shows muted "Loading calendar..." until the status arrives', async () => {
+  it('never calls the status endpoint', async () => {
+    let statusCalls = 0
+    server.use(
+      ...googleCalendarHandlers('connected'),
+      http.get(`${API_BASE}/google_calendar_connection`, () => {
+        statusCalls += 1
+        return HttpResponse.json({ google_calendar_connection: { status: 'connected' } })
+      }),
+    )
+    renderCard()
+    await screen.findByText('Google Calendar connected.')
+    expect(statusCalls).toBe(0)
+  })
+
+  it('shows muted "Loading calendar..." until the events arrive', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
     expect(screen.getByText('Loading calendar...')).toHaveClass('text-muted-foreground')
@@ -84,10 +98,10 @@ describe('TodayCard', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('shows an alert, after one request only, when the status cannot be loaded', async () => {
+  it('shows an alert, after one request only, when the events cannot be loaded', async () => {
     let requests = 0
     server.use(
-      http.get(`${API_BASE}/google_calendar_connection`, () => {
+      http.get(`${API_BASE}/google_calendar_connection/events`, () => {
         requests += 1
         return HttpResponse.json(errorBody('internal_error', 'Something went wrong.'), { status: 500 })
       }),
@@ -101,9 +115,9 @@ describe('TodayCard', () => {
   it('sends no request when the window regains focus after the status is stale', async () => {
     let requests = 0
     server.use(
-      http.get(`${API_BASE}/google_calendar_connection`, () => {
+      http.get(`${API_BASE}/google_calendar_connection/events`, () => {
         requests += 1
-        return HttpResponse.json({ google_calendar_connection: { status: 'connected' as MockConnectionStatus } })
+        return HttpResponse.json(eventsBody('connected'))
       }),
     )
     const client = renderCard()
@@ -112,7 +126,7 @@ describe('TodayCard', () => {
 
     // Move only the clock (not timers) past the 60 s staleTime, and check that the query really is stale.
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 })
-    expect(client.getQueryCache().find({ queryKey: ['google_calendar_connection'] })?.isStaleByTime(60_000)).toBe(true)
+    expect(client.getQueryCache().find({ queryKey: ['google_calendar_today'] })?.isStaleByTime(60_000)).toBe(true)
 
     // The window loses and regains focus: the signal TanStack Query refetches stale queries on.
     act(() => focusManager.setFocused(false))
@@ -136,18 +150,18 @@ describe('TodayCard', () => {
   it('control: a stale query without the opt-out refetches on focus', async () => {
     let requests = 0
     server.use(
-      http.get(`${API_BASE}/google_calendar_connection`, () => {
+      http.get(`${API_BASE}/google_calendar_connection/events`, () => {
         requests += 1
-        return HttpResponse.json({ google_calendar_connection: { status: 'connected' as MockConnectionStatus } })
+        return HttpResponse.json(eventsBody('connected'))
       }),
     )
     function Plain() {
       const { data } = useQuery({
-        queryKey: ['google_calendar_connection'],
-        queryFn: getGoogleCalendarConnection,
+        queryKey: ['google_calendar_today'],
+        queryFn: getTodayEvents,
         staleTime: 60_000,
       })
-      return <p>{data ?? 'loading'}</p>
+      return <p>{data?.google_calendar_connection.status ?? 'loading'}</p>
     }
     render(
       <QueryClientProvider client={new QueryClient()}>
