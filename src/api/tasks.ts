@@ -42,3 +42,13 @@ export async function updateTask(listId: number, id: number, changes: TaskChange
   const body = (await response.json()) as { task: Task }
   return body.task
 }
+
+// DELETE /task_lists/:listId/tasks/:id. Resolves on 204, and also on 404: a task that is already gone (deleted in
+// another tab, or its list deleted) is what was wanted. `alreadyGone` says which, so the caller can fetch again to
+// catch up with whatever else changed. Rejects with an ApiError on any other answer.
+export async function deleteTask(listId: number, id: number): Promise<{ alreadyGone: boolean }> {
+  const response = await apiFetch(`/task_lists/${listId}/tasks/${id}`, { method: 'DELETE' })
+  if (response.status === 404) return { alreadyGone: true }
+  if (!response.ok) throw await apiErrorFrom(response)
+  return { alreadyGone: false }
+}
