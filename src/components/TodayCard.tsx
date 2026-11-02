@@ -1,10 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { getTodayEvents, startGoogleCalendarAuthorization, type TodayEvent } from '@/api/googleCalendarConnection'
 import { Button } from '@/components/ui/button'
 import { eventsOnDay, formatClock } from '@/lib/calendarDay'
 import { navigateTo } from '@/lib/externalNavigation'
+import { todayClass } from '@/lib/todayHighlight'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 
@@ -37,21 +38,41 @@ function TodayEventList({ items }: { items: TodayEvent[] }) {
   const rows = eventsOnDay(items, new Date(now))
   // Also the answer when the API sent events only for other days, or when every event of the day was filtered out.
   if (rows.length === 0) return <p className="text-muted-foreground">Nothing on your calendar today.</p>
+  // The timed events start at the first row that has an end. A divider goes before the first timed row whose state
+  // (ended or not) differs from the first timed row's, so it shows only when events lie on both sides of now.
+  const firstTimed = rows.findIndex((row) => row.endsAtMs !== null)
+  const isEnded = (endsAtMs: number | null) => endsAtMs !== null && now >= endsAtMs
+  const ruleBefore =
+    firstTimed < 0
+      ? -1
+      : rows.findIndex((row, i) => i > firstTimed && isEnded(row.endsAtMs) !== isEnded(rows[firstTimed].endsAtMs))
   return (
     // A long day scrolls inside the card. tabIndex lets a keyboard user focus the region to scroll it with the arrow keys,
     // and the name tells a screen reader what the region holds.
     <div role="region" aria-label="Today's events" tabIndex={0} className="max-h-96 overflow-y-auto">
       <ul className="grid gap-1">
-        {rows.map(({ event, label, endsAtMs }) => {
-          const ended = endsAtMs !== null && now >= endsAtMs
+        {rows.map(({ event, label, endsAtMs }, index) => {
+          const ended = isEnded(endsAtMs)
           return (
-            <li key={event.id} className={cn('flex gap-3', ended && 'text-muted-foreground')}>
-              <span className="w-20 shrink-0 tabular-nums">{label}</span>
-              <span className="min-w-0 break-words">
-                {event.title ?? '(No title)'}
-                {ended && <span className="sr-only">, ended</span>}
-              </span>
-            </li>
+            <Fragment key={event.id}>
+              {/* A purely visual divider, hidden from assistive technology so the list keeps only its events. */}
+              {index === ruleBefore && <li aria-hidden="true" className="mx-auto my-1 h-px w-1/2 bg-border" />}
+              <li
+                className={cn(
+                  'flex gap-3',
+                  endsAtMs === null && todayClass,
+                  // A little space between the all-day group and the first timed event, only when both are shown.
+                  index === firstTimed && index > 0 && 'mt-2',
+                  ended && 'text-muted-foreground',
+                )}
+              >
+                <span className="w-20 shrink-0 tabular-nums">{label}</span>
+                <span className="min-w-0 break-words">
+                  {event.title ?? '(No title)'}
+                  {ended && <span className="sr-only">, ended</span>}
+                </span>
+              </li>
+            </Fragment>
           )
         })}
       </ul>
@@ -124,7 +145,7 @@ export function TodayCard() {
             <TodayEventList items={data.events.items} />
             {/* The time Google answered, as the API saw it, so a wrong device clock cannot make it wrong. */}
             {/* After a failed refresh the last answer stays on screen, marked, until the next success. */}
-            <p className={cn('text-sm', isRefetchError ? 'text-destructive' : 'text-muted-foreground')}>
+            <p className={cn('text-right text-xs', isRefetchError ? 'text-destructive' : 'text-muted-foreground')}>
               {isRefetchError && 'Out of date. '}Updated {formatClock(new Date(data.events.fetched_at))}
               {isRefetchError && '.'}
             </p>
