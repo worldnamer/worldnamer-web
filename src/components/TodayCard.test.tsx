@@ -390,6 +390,27 @@ describe('TodayCard', () => {
     })
   })
 
+  it('puts a long day in a named, focusable, scrolling region', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      timedEvent(`t${i}`, `Event ${i}`, `2026-11-01T${String(i % 24).padStart(2, '0')}:30:00-08:00`, `2026-11-01T${String(i % 24).padStart(2, '0')}:45:00-08:00`),
+    )
+    server.use(...googleCalendarHandlers('connected', many))
+    renderCard()
+    const region = await screen.findByRole('region', { name: "Today's events" })
+    expect(region).toHaveClass('max-h-96', 'overflow-y-auto')
+    expect(region).toHaveAttribute('tabindex', '0')
+    expect(within(region).getByRole('list')).toBeInTheDocument()
+    region.focus()
+    expect(region).toHaveFocus()
+  })
+
+  it('has no events region on an empty day', async () => {
+    server.use(...googleCalendarHandlers('connected', []))
+    renderCard()
+    await screen.findByText('Nothing on your calendar today.')
+    expect(screen.queryByRole('region', { name: "Today's events" })).not.toBeInTheDocument()
+  })
+
   it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
     server.use(...googleCalendarHandlers('not_connected'))
     renderCard()

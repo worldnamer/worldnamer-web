@@ -38,20 +38,24 @@ function TodayEventList({ items }: { items: TodayEvent[] }) {
   // Also the answer when the API sent events only for other days, or when every event of the day was filtered out.
   if (rows.length === 0) return <p className="text-muted-foreground">Nothing on your calendar today.</p>
   return (
-    <ul className="grid gap-1">
-      {rows.map(({ event, label, endsAtMs }) => {
-        const ended = endsAtMs !== null && now >= endsAtMs
-        return (
-          <li key={event.id} className={cn('flex gap-3', ended && 'text-muted-foreground')}>
-            <span className="w-20 shrink-0 tabular-nums">{label}</span>
-            <span className="min-w-0 break-words">
-              {event.title ?? '(No title)'}
-              {ended && <span className="sr-only">, ended</span>}
-            </span>
-          </li>
-        )
-      })}
-    </ul>
+    // A long day scrolls inside the card. tabIndex lets a keyboard user focus the region to scroll it with the arrow keys,
+    // and the name tells a screen reader what the region holds.
+    <div role="region" aria-label="Today's events" tabIndex={0} className="max-h-96 overflow-y-auto">
+      <ul className="grid gap-1">
+        {rows.map(({ event, label, endsAtMs }) => {
+          const ended = endsAtMs !== null && now >= endsAtMs
+          return (
+            <li key={event.id} className={cn('flex gap-3', ended && 'text-muted-foreground')}>
+              <span className="w-20 shrink-0 tabular-nums">{label}</span>
+              <span className="min-w-0 break-words">
+                {event.title ?? '(No title)'}
+                {ended && <span className="sr-only">, ended</span>}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
