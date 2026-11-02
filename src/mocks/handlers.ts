@@ -331,3 +331,55 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
 
   return [list, create, update, remove]
 }
+
+// The Google Calendar connection. googleCalendarHandlers(status, items) answers GET /google_calendar_connection/events
+// with the given status and, when the status is connected, the given entries (events is null otherwise, as in the API),
+// and POST /google_calendar_connection/authorization with a consent address. The status endpoint has no handler on
+// purpose: the Today card must not call it, and an unhandled request fails the test. Opt-in like the others:
+// server.use(...googleCalendarHandlers('connected', [timedEvent(...)])).
+export const CONSENT_URL = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state=test'
+
+export type MockConnectionStatus = 'not_connected' | 'connected' | 'lost'
+export type MockEvent = {
+  id: string
+  title: string | null
+  all_day: boolean
+  starts_on: string | null
+  ends_on: string | null
+  starts_at: string | null
+  ends_at: string | null
+}
+
+export const FETCHED_AT = '2026-11-01T16:41:07Z'
+
+// The body of the events endpoint, for a test that answers it by hand.
+export function eventsBody(status: MockConnectionStatus, items: MockEvent[] = [], fetchedAt = FETCHED_AT) {
+  return {
+    google_calendar_connection: { status },
+    events: status === 'connected' ? { fetched_at: fetchedAt, items } : null,
+  }
+}
+
+// A timed event; `startsAt` and `endsAt` are ISO 8601 strings with an offset.
+export function timedEvent(id: string, title: string | null, startsAt: string, endsAt: string): MockEvent {
+  return { id, title, all_day: false, starts_on: null, ends_on: null, starts_at: startsAt, ends_at: endsAt }
+}
+
+// An all-day event; `endsOn` is exclusive, as Google sends it.
+export function allDayEvent(id: string, title: string | null, startsOn: string, endsOn: string): MockEvent {
+  return { id, title, all_day: true, starts_on: startsOn, ends_on: endsOn, starts_at: null, ends_at: null }
+}
+
+export function googleCalendarHandlers(status: MockConnectionStatus = 'not_connected', items: MockEvent[] = []) {
+  const events = http.get(`${API_BASE}/google_calendar_connection/events`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json(eventsBody(status, items), { headers: noStore })
+  })
+
+  const start = http.post(`${API_BASE}/google_calendar_connection/authorization`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201, headers: noStore })
+  })
+
+  return [events, start]
+}
