@@ -334,6 +334,62 @@ describe('TodayCard', () => {
     })
   })
 
+  describe('when a refresh fails', () => {
+    const useClock = (now: Date) => {
+      vi.useRealTimers()
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'], now })
+    }
+    const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+    const holiday = allDayEvent('a', 'Holiday', '2026-11-01', '2026-11-02')
+
+    // Answers the first request with the events, then each response in `later` in turn (the last one repeats).
+    function answers(later: Array<() => Response>) {
+      let requests = 0
+      server.use(
+        http.get(`${API_BASE}/google_calendar_connection/events`, () => {
+          requests += 1
+          if (requests === 1) return HttpResponse.json(eventsBody('connected', [holiday]))
+          return later[Math.min(requests - 2, later.length - 1)]()
+        }),
+      )
+    }
+
+    it.each([
+      ['a 502', () => new HttpResponse('<html>Bad Gateway</html>', { status: 502 })],
+      ['a network error', () => HttpResponse.error()],
+    ])('keeps the events and marks them out of date after %s, and the next success clears the mark', async (_name, failure) => {
+      useClock(new Date(2026, 10, 1, 12, 0))
+      answers([failure, () => HttpResponse.json(eventsBody('connected', [holiday], '2026-11-01T20:05:00Z'))])
+      renderCard()
+      await vi.waitFor(() => expect(screen.getByText(/^Updated 8:41\sAM$/)).toBeInTheDocument())
+
+      await tick(TODAY_REFRESH_MS)
+      const line = await vi.waitFor(() => screen.getByText(/^Out of date\. Updated 8:41\sAM\.$/))
+      expect(line).toHaveClass('text-destructive')
+      expect(screen.getByText('Holiday')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+      await tick(TODAY_REFRESH_MS)
+      const fresh = await vi.waitFor(() => screen.getByText(/^Updated 12:05\sPM$/))
+      expect(fresh).toHaveClass('text-muted-foreground')
+      expect(screen.queryByText(/Out of date/)).not.toBeInTheDocument()
+      expect(screen.getByText('Holiday')).toBeInTheDocument()
+    })
+
+    it('drops the list and offers Connect with the lost line when a refresh answers lost', async () => {
+      useClock(new Date(2026, 10, 1, 12, 0))
+      answers([() => HttpResponse.json(eventsBody('lost'))])
+      renderCard()
+      await vi.waitFor(() => expect(screen.getByText('Holiday')).toBeInTheDocument())
+
+      await tick(TODAY_REFRESH_MS)
+      await vi.waitFor(() => expect(screen.getByText('The connection to Google Calendar was lost.')).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled()
+      expect(screen.queryByText('Holiday')).not.toBeInTheDocument()
+      expect(screen.queryByText(/Out of date/)).not.toBeInTheDocument()
+    })
+  })
+
   it('shows the Connect button, and neither the connected line nor an error, when not connected', async () => {
     server.use(...googleCalendarHandlers('not_connected'))
     renderCard()

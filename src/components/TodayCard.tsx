@@ -57,7 +57,7 @@ function TodayEventList({ items }: { items: TodayEvent[] }) {
 
 // The Today card: the state of the Google Calendar link and, when connected, today's events.
 export function TodayCard() {
-  const { data, isPending, isError } = useQuery({
+  const { data, isPending, isError, isRefetchError } = useQuery({
     queryKey: ['google_calendar_today'],
     queryFn: getTodayEvents,
     retry: false, // a down API should show the error at once, not after several retries
@@ -109,7 +109,8 @@ export function TodayCard() {
       </div>
       <div className="grid gap-2 border-b border-border py-2">
         {isPending && <p className="text-muted-foreground">Loading calendar...</p>}
-        {isError && (
+        {/* Only a first load that failed: a failed refresh keeps the last data and is marked on the Updated line instead. */}
+        {isError && !data && (
           <p role="alert" className="text-destructive">
             Couldn't load your calendar connection. Try reloading the page.
           </p>
@@ -118,7 +119,11 @@ export function TodayCard() {
           <>
             <TodayEventList items={data.events.items} />
             {/* The time Google answered, as the API saw it, so a wrong device clock cannot make it wrong. */}
-            <p className="text-sm text-muted-foreground">Updated {formatClock(new Date(data.events.fetched_at))}</p>
+            {/* After a failed refresh the last answer stays on screen, marked, until the next success. */}
+            <p className={cn('text-sm', isRefetchError ? 'text-destructive' : 'text-muted-foreground')}>
+              {isRefetchError && 'Out of date. '}Updated {formatClock(new Date(data.events.fetched_at))}
+              {isRefetchError && '.'}
+            </p>
           </>
         )}
         {/* A message about the connect attempt just made is more recent than the stored state, so it replaces this line. */}
