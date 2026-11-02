@@ -66,7 +66,7 @@ describe('TodayCard', () => {
     await settled()
 
     const card = screen.getByRole('region', { name: 'Today' })
-    expect(card).toHaveClass('w-full', 'lg:w-1/4', 'lg:order-last')
+    expect(card).toHaveClass('w-full')
     const [heading, body] = Array.from(card.children)
     expect(heading).toHaveClass('border-b', 'border-border', 'pb-2')
     expect(body).toHaveClass('border-b', 'border-border', 'py-2')

@@ -1,3 +1,4 @@
+import { FocusTimerCard } from './FocusTimerCard'
 import { Habits } from './Habits'
 import { Tasks } from './Tasks'
 import { TodayCard } from './TodayCard'
@@ -5,13 +6,16 @@ import { TodayCard } from './TodayCard'
 // Left-aligned. Layout's <main> supplies px-5 and the top padding (pt-4, sm:pt-6); the negative margin cancels the px-5
 // and the pl- classes replace it with the same value as the top padding, so the left margin equals the top margin. The
 // gap between the cards uses the same value again.
-// Below lg everything stacks with the Today card first. From lg the Habits and Tasks column is half the width and the
-// Today card is a quarter, moved to the right with `order-last` while staying first in the DOM (and so first for the
-// keyboard and screen readers).
+// Below lg everything stacks in the order Today, focus timer, Habits, Tasks. From lg the Habits and Tasks column is half
+// the width and the Today and focus timer column is a quarter, moved to the right with `order-last` while staying first
+// in the DOM (and so first for the keyboard and screen readers). The timer follows Today in that column, at its width.
 export function LoggedInHome() {
   return (
     <section aria-label="Logged-in home" className="-ml-5 flex flex-col gap-4 pl-4 sm:gap-6 sm:pl-6 lg:flex-row lg:items-start">
-      <TodayCard />
+      <div className="flex w-full flex-col gap-4 sm:gap-6 lg:order-last lg:w-1/4">
+        <TodayCard />
+        <FocusTimerCard />
+      </div>
       <div className="w-full lg:w-1/2">
         <Habits />
         <div className="mt-4 sm:mt-6">

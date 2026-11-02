@@ -1,4 +1,4 @@
-// The logged-in home: the Today card, and a column with the Habits card above the Tasks card, at the same width and with
+// The logged-in home: the Today card with the focus timer under it, and a column with the Habits card above the Tasks card, at the same width and with
 // the same rules.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
@@ -73,6 +73,28 @@ it('puts the Today card first in the page and the cards in a row from lg, with t
   const home = screen.getByRole('region', { name: 'Logged-in home' })
   expect(home).toHaveClass('flex', 'flex-col', 'gap-4', 'sm:gap-6', 'lg:flex-row', 'lg:items-start')
   const today = screen.getByRole('region', { name: 'Today' })
-  expect(home.firstElementChild).toBe(today)
-  expect(today).toHaveClass('w-full', 'lg:w-1/4', 'lg:order-last')
+  const timer = screen.getByRole('region', { name: 'Focus timer' })
+  // Today and the timer share a quarter-width column that comes first in the DOM and last on screen from lg.
+  const column = home.firstElementChild
+  expect(column).toHaveClass('w-full', 'lg:w-1/4', 'lg:order-last', 'flex', 'flex-col', 'gap-4', 'sm:gap-6')
+  expect(column?.children[0]).toBe(today)
+  expect(column?.children[1]).toBe(timer)
+})
+
+it('puts the focus timer after Today and before Habits and Tasks in the page', async () => {
+  server.use(...habitsHandlers([{ id: 1, name: 'Stretch' }]), ...taskListsHandlers([{ id: 1, name: 'Chores' }]), ...googleCalendarHandlers('connected', []))
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <LoggedInHome />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  await screen.findByText('Stretch')
+  await screen.findByRole('button', { name: 'Chores' })
+
+  const order = ['Today', 'Focus timer', 'Habits', 'Tasks'].map((name) => screen.getByRole('region', { name }))
+  for (let i = 0; i < order.length - 1; i++) {
+    expect(order[i].compareDocumentPosition(order[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  }
 })
