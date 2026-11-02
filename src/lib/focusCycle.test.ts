@@ -65,3 +65,39 @@ it('formats the time left as m:ss, rounded up', () => {
   expect(formatRemaining(61_000)).toBe('1:01')
   expect(formatRemaining(0)).toBe('0:00')
 })
+
+const running = (now = 0): FocusState => focusReducer(initialFocusState, { type: 'start', now, lengths })
+
+it('pauses with the time left frozen and continues with neither loss nor gain', () => {
+  const paused = focusReducer(running(0), { type: 'pause', now: 10 * MIN })
+  expect(paused).toEqual({ status: 'paused', phase: 0, lengths, remainingMs: 15 * MIN })
+  // However long the pause lasts, the time left does not move and does not end.
+  expect(remainingMs(paused, 500 * MIN)).toBe(15 * MIN)
+  expect(hasEnded(paused, 500 * MIN)).toBe(false)
+  const resumed = focusReducer(paused, { type: 'resume', now: 100 * MIN })
+  expect(resumed).toEqual({ status: 'running', phase: 0, lengths, endsAt: 115 * MIN })
+  expect(remainingMs(resumed, 100 * MIN)).toBe(15 * MIN)
+})
+
+it('skips to the next phase held at its full length from running, paused and held', () => {
+  const held1 = { status: 'held', phase: 1, lengths }
+  expect(focusReducer(running(), { type: 'skip' })).toEqual(held1)
+  expect(focusReducer(focusReducer(running(), { type: 'pause', now: MIN }), { type: 'skip' })).toEqual(held1)
+  expect(focusReducer({ status: 'held', phase: 1, lengths }, { type: 'skip' })).toEqual({ status: 'held', phase: 2, lengths })
+})
+
+it('returns to the pickers when the last section is skipped, and on stop from anywhere', () => {
+  expect(focusReducer({ status: 'held', phase: 5, lengths }, { type: 'skip' })).toEqual({ status: 'idle' })
+  expect(focusReducer({ status: 'running', phase: 5, lengths, endsAt: 9 }, { type: 'skip' })).toEqual({ status: 'idle' })
+  expect(focusReducer(running(), { type: 'stop' })).toEqual({ status: 'idle' })
+  expect(focusReducer({ status: 'held', phase: 3, lengths }, { type: 'stop' })).toEqual({ status: 'idle' })
+  expect(focusReducer({ status: 'paused', phase: 2, lengths, remainingMs: 5 }, { type: 'stop' })).toEqual({ status: 'idle' })
+})
+
+it('ignores pause, resume and skip where they do not apply', () => {
+  expect(focusReducer(initialFocusState, { type: 'skip' })).toBe(initialFocusState)
+  expect(focusReducer(initialFocusState, { type: 'pause', now: 0 })).toBe(initialFocusState)
+  const held: FocusState = { status: 'held', phase: 1, lengths }
+  expect(focusReducer(held, { type: 'pause', now: 0 })).toBe(held)
+  expect(focusReducer(held, { type: 'resume', now: 0 })).toBe(held)
+})

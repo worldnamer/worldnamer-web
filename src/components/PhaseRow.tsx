@@ -8,7 +8,7 @@ const ICONS: Record<PhaseKind, LucideIcon> = { work: BriefcaseIcon, break: Coffe
 // The six sections of the cycle in one row. The current one is a wide bar whose fill is the share of the phase still
 // left, with the time centered on it. Later ones are small outlined icons and finished ones small solid icons. The
 // icons are decoration; each item also carries its name and state as text for a screen reader.
-export function PhaseRow({ phase, lengths, remaining, held }: { phase: number; lengths: FocusLengths; remaining: number; held: boolean }) {
+export function PhaseRow({ phase, lengths, remaining, note }: { phase: number; lengths: FocusLengths; remaining: number; note?: string }) {
   return (
     <ol aria-label="Focus cycle" className="flex h-9 items-center gap-2">
       {PHASES.map((kind, index) => {
@@ -21,7 +21,7 @@ export function PhaseRow({ phase, lengths, remaining, held }: { phase: number; l
             <li key={index} aria-current="step" className="min-w-0 flex-1">
               <div
                 role="progressbar"
-                aria-label={`${label}, ${time} left${held ? ', ready to start' : ''}`}
+                aria-label={`${label}, ${time} left${note ? `, ${note}` : ''}`}
                 aria-valuemin={0}
                 aria-valuemax={total}
                 aria-valuenow={remaining}

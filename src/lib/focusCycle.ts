@@ -13,17 +13,24 @@ export const PHASES: readonly PhaseKind[] = ['work', 'break', 'work', 'break', '
 export const PHASE_LABELS: Record<PhaseKind, string> = { work: 'Work', break: 'Break', longBreak: 'Long break' }
 
 // idle: showing the pickers. held: a phase waiting at its full length until it is started. running: counting down
-// to `endsAt`. The lengths used are copied into the state when the cycle starts.
+// to `endsAt`. paused: stopped with `remainingMs` frozen. The lengths used are copied into the state when the cycle starts.
 export type FocusState =
   | { status: 'idle' }
   | { status: 'held'; phase: number; lengths: FocusLengths }
   | { status: 'running'; phase: number; lengths: FocusLengths; endsAt: number }
+  | { status: 'paused'; phase: number; lengths: FocusLengths; remainingMs: number }
 
 export type FocusAction =
   // Starts the cycle from the pickers, or starts the held phase. Needs the lengths for the first case.
   | { type: 'start'; now: number; lengths: FocusLengths }
   // The running phase has run out: move to the next one, held, or back to the pickers after the last.
   | { type: 'phaseEnded' }
+  // Freezes the time left; resume sets a new end time that far from now, so no time is lost or gained.
+  | { type: 'pause'; now: number }
+  | { type: 'resume'; now: number }
+  // Moves on to the next phase, held at its full length, from running, paused or held. After the last, back to the pickers.
+  | { type: 'skip' }
+  | { type: 'stop' }
 
 export const initialFocusState: FocusState = { status: 'idle' }
 
@@ -40,6 +47,8 @@ export function remainingMs(state: FocusState, now: number): number {
       return phaseMs(state.phase, state.lengths)
     case 'running':
       return Math.max(0, state.endsAt - now)
+    case 'paused':
+      return state.remainingMs
   }
 }
 
@@ -65,6 +74,16 @@ export function focusReducer(state: FocusState, action: FocusAction): FocusState
       return state
     case 'phaseEnded':
       return state.status === 'running' ? afterPhase(state.phase, state.lengths) : state
+    case 'pause':
+      if (state.status !== 'running') return state
+      return { status: 'paused', phase: state.phase, lengths: state.lengths, remainingMs: Math.max(0, state.endsAt - action.now) }
+    case 'resume':
+      if (state.status !== 'paused') return state
+      return { status: 'running', phase: state.phase, lengths: state.lengths, endsAt: action.now + state.remainingMs }
+    case 'skip':
+      return state.status === 'idle' ? state : afterPhase(state.phase, state.lengths)
+    case 'stop':
+      return initialFocusState
   }
 }
 

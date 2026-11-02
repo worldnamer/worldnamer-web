@@ -5,13 +5,16 @@ import { Button } from '@/components/ui/button'
 import { loadFocusLengths, saveFocusLengths, type FocusLengths } from '@/lib/focusLengths'
 import { useFocusTimer } from '@/lib/useFocusTimer'
 
+// Said after the time in the bar's name, for a screen reader.
+const NOTES: Record<string, string | undefined> = { held: 'ready to start', paused: 'paused' }
+
 // The focus timer card: the three length pickers while idle, and the six-section row while a cycle runs. The body and
 // the controls row have fixed heights so the card keeps its size when it switches between the two.
 // The state lives here and nowhere else: nothing about a running timer is saved or shared, so there is no server state.
 export function FocusTimerCard() {
   // Read from storage once, on the first render.
   const [lengths, setLengths] = useState<FocusLengths>(loadFocusLengths)
-  const { state, remaining, start } = useFocusTimer(lengths)
+  const { state, remaining, start, pause, resume, skip, stop } = useFocusTimer(lengths)
 
   function change(key: keyof FocusLengths, minutes: number) {
     const next = { ...lengths, [key]: minutes }
@@ -36,7 +39,7 @@ export function FocusTimerCard() {
             </div>
           ) : (
             <div className="w-full">
-              <PhaseRow phase={state.phase} lengths={state.lengths} remaining={remaining} held={state.status === 'held'} />
+              <PhaseRow phase={state.phase} lengths={state.lengths} remaining={remaining} note={NOTES[state.status]} />
             </div>
           )}
         </div>
@@ -45,6 +48,26 @@ export function FocusTimerCard() {
             <Button size="sm" onClick={start}>
               Start
             </Button>
+          )}
+          {state.status === 'running' && (
+            <Button size="sm" onClick={pause}>
+              Pause
+            </Button>
+          )}
+          {state.status === 'paused' && (
+            <Button size="sm" onClick={resume}>
+              Continue
+            </Button>
+          )}
+          {state.status !== 'idle' && (
+            <>
+              <Button size="sm" variant="outline" onClick={skip}>
+                Skip
+              </Button>
+              <Button size="sm" variant="outline" onClick={stop}>
+                Stop
+              </Button>
+            </>
           )}
         </div>
       </div>

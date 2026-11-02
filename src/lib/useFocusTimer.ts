@@ -18,6 +18,19 @@ export function useFocusTimer(lengths: FocusLengths) {
     dispatch({ type: 'start', now: t, lengths })
   }, [lengths])
 
+  const pause = useCallback(() => {
+    const t = Date.now()
+    setNow(t)
+    dispatch({ type: 'pause', now: t })
+  }, [])
+  const resume = useCallback(() => {
+    const t = Date.now()
+    setNow(t)
+    dispatch({ type: 'resume', now: t })
+  }, [])
+  const skip = useCallback(() => dispatch({ type: 'skip' }), [])
+  const stop = useCallback(() => dispatch({ type: 'stop' }), [])
+
   const running = state.status === 'running'
   useEffect(() => {
     if (!running) return
@@ -26,9 +39,9 @@ export function useFocusTimer(lengths: FocusLengths) {
       setNow(t)
       if (hasEnded(state, t)) dispatch({ type: 'phaseEnded' })
     }, TICK_MS)
-    // Cleared whenever the phase changes or stops running, and when the card goes away.
+    // Cleared on pause, hold, stop and skip (the state stops running), when the phase changes, and when the card goes away.
     return () => clearInterval(id)
   }, [running, state])
 
-  return { state, remaining: remainingMs(state, now), start }
+  return { state, remaining: remainingMs(state, now), start, pause, resume, skip, stop }
 }
