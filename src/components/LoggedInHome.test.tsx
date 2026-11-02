@@ -3,24 +3,30 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { googleCalendarHandlers, habitsHandlers, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
+import { googleCalendarHandlers, habitsHandlers, REFRESH_TOKEN, taskListsHandlers, timedEvent } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { LoggedInHome } from './LoggedInHome'
 
+// The event is on this day in the test zone, America/Los_Angeles (vite.config.ts).
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 1, 12, 0) })
   queryClient.clear()
   clearAccessToken()
   setAccessToken(REFRESH_TOKEN)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 it('puts Tasks below Habits, at the same width, with the same rules, and a gap equal to the top padding', async () => {
   server.use(
     ...habitsHandlers([{ id: 1, name: 'Stretch' }]),
     ...taskListsHandlers([{ id: 1, name: 'Chores' }]),
-    ...googleCalendarHandlers('connected'),
+    ...googleCalendarHandlers('connected', [timedEvent('e1', 'Standup', '2026-11-01T09:00:00-08:00', '2026-11-01T09:15:00-08:00')]),
   )
   render(
     <QueryClientProvider client={queryClient}>
@@ -31,7 +37,7 @@ it('puts Tasks below Habits, at the same width, with the same rules, and a gap e
   )
   await screen.findByText('Stretch')
   await screen.findByRole('button', { name: 'Chores' })
-  await screen.findByText('Google Calendar connected.')
+  await screen.findByText('Standup')
 
   const habits = screen.getByRole('region', { name: 'Habits' })
   const tasks = screen.getByRole('region', { name: 'Tasks' })
@@ -54,7 +60,7 @@ it('puts Tasks below Habits, at the same width, with the same rules, and a gap e
 })
 
 it('puts the Today card first in the page and the cards in a row from lg, with the same gap as the top padding', async () => {
-  server.use(...habitsHandlers(), ...taskListsHandlers(), ...googleCalendarHandlers('connected'))
+  server.use(...habitsHandlers(), ...taskListsHandlers(), ...googleCalendarHandlers('connected', [timedEvent('e1', 'Standup', '2026-11-01T09:00:00-08:00', '2026-11-01T09:15:00-08:00')]))
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -62,7 +68,7 @@ it('puts the Today card first in the page and the cards in a row from lg, with t
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  await screen.findByText('Google Calendar connected.')
+  await screen.findByText('Standup')
 
   const home = screen.getByRole('region', { name: 'Logged-in home' })
   expect(home).toHaveClass('flex', 'flex-col', 'gap-4', 'sm:gap-6', 'lg:flex-row', 'lg:items-start')

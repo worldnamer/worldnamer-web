@@ -1,10 +1,10 @@
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, CONSENT_URL, errorBody, googleCalendarHandlers, REFRESH_TOKEN } from '@/mocks/handlers'
+import { API_BASE, CONSENT_URL, errorBody, eventsBody, REFRESH_TOKEN, timedEvent, type MockConnectionStatus } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { getGoogleCalendarConnection, startGoogleCalendarAuthorization } from './googleCalendarConnection'
+import { getGoogleCalendarConnection, getTodayEvents, startGoogleCalendarAuthorization } from './googleCalendarConnection'
 
 beforeEach(() => {
   clearAccessToken()
@@ -16,8 +16,12 @@ afterEach(() => {
 })
 
 describe('getGoogleCalendarConnection', () => {
-  it.each(['not_connected', 'connected', 'lost'] as const)('resolves the status %s', async (status) => {
-    server.use(...googleCalendarHandlers(status))
+  it.each(['not_connected', 'connected', 'lost'] as const)('resolves the status %s', async (status: MockConnectionStatus) => {
+    server.use(
+      http.get(`${API_BASE}/google_calendar_connection`, () =>
+        HttpResponse.json({ google_calendar_connection: { status } }),
+      ),
+    )
     expect(await getGoogleCalendarConnection()).toBe(status)
   })
 
@@ -41,6 +45,38 @@ describe('getGoogleCalendarConnection', () => {
     )
     await expect(getGoogleCalendarConnection()).rejects.toMatchObject({ status: 500 })
     await expect(getGoogleCalendarConnection()).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('getTodayEvents', () => {
+  it('resolves the status and the events, sending the bearer token', async () => {
+    let auth: string | null = null
+    const items = [timedEvent('a', 'Dentist', '2026-11-01T09:00:00-07:00', '2026-11-01T10:00:00-07:00')]
+    server.use(
+      http.get(`${API_BASE}/google_calendar_connection/events`, ({ request }) => {
+        auth = request.headers.get('Authorization')
+        return HttpResponse.json(eventsBody('connected', items))
+      }),
+    )
+    const body = await getTodayEvents()
+    expect(auth).toBe(`Bearer ${REFRESH_TOKEN}`)
+    expect(body.google_calendar_connection.status).toBe('connected')
+    expect(body.events?.items).toEqual(items)
+  })
+
+  it('resolves events: null when the calendar is not connected', async () => {
+    server.use(
+      http.get(`${API_BASE}/google_calendar_connection/events`, () => HttpResponse.json(eventsBody('not_connected'))),
+    )
+    expect((await getTodayEvents()).events).toBeNull()
+  })
+
+  it('rejects with an ApiError on any non-2xx answer, whatever the body', async () => {
+    server.use(
+      http.get(`${API_BASE}/google_calendar_connection/events`, () => new HttpResponse('<html>Bad Gateway</html>', { status: 502 })),
+    )
+    await expect(getTodayEvents()).rejects.toMatchObject({ status: 502 })
+    await expect(getTodayEvents()).rejects.toBeInstanceOf(ApiError)
   })
 })
 
