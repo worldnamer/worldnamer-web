@@ -13,6 +13,7 @@ import {
 } from '@/api/habits'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
+import { todayClass } from '@/lib/todayHighlight'
 import { cn } from '@/lib/utils'
 import {
   addWeeks,
@@ -27,9 +28,6 @@ import {
 
 // The habit name, seven days and the Delete button.
 const columnCount = 9
-
-// A subtle background on today's column, from the theme's muted surface colour.
-const todayClass = 'bg-accent/40'
 
 const inputClass =
   'h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'

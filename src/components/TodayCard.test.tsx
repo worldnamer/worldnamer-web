@@ -5,10 +5,11 @@ import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { allDayEvent, API_BASE, CONSENT_URL, errorBody, eventsBody, googleCalendarHandlers, REFRESH_TOKEN, timedEvent } from '@/mocks/handlers'
+import { allDayEvent, API_BASE, CONSENT_URL, errorBody, eventsBody, googleCalendarHandlers, REFRESH_TOKEN, timedEvent, type MockEvent } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { getTodayEvents } from '@/api/googleCalendarConnection'
 import { navigateTo } from '@/lib/externalNavigation'
+import { todayClass } from '@/lib/todayHighlight'
 import { TODAY_REFRESH_MS, TodayCard } from './TodayCard'
 
 vi.mock('@/lib/externalNavigation', () => ({ navigateTo: vi.fn() }))
@@ -194,6 +195,80 @@ describe('TodayCard', () => {
         expect(li).not.toHaveClass('text-muted-foreground')
         expect(li).not.toHaveTextContent('ended')
       }
+    })
+
+    describe('highlight, gap and now-rule', () => {
+      const holiday = allDayEvent('a', 'Holiday', '2026-11-01', '2026-11-02')
+      const breakfast = timedEvent('t1', 'Breakfast', '2026-11-01T08:00:00-08:00', '2026-11-01T09:00:00-08:00')
+      const lunch = timedEvent('t2', 'Lunch', '2026-11-01T11:30:00-08:00', '2026-11-01T12:30:00-08:00')
+      const dinner = timedEvent('t3', 'Dinner', '2026-11-01T18:30:00-08:00', '2026-11-01T20:00:00-08:00')
+      // The divider is hidden from assistive technology, so it is found by its markup. useList starts the clock and
+      // loads the events (named use... because it calls useClock).
+      const rule = () => document.querySelector('li[aria-hidden="true"]')
+      const useList = (items: MockEvent[], rows: number) => {
+        useClock(new Date(2026, 10, 1, 12, 0))
+        server.use(...googleCalendarHandlers('connected', items))
+        renderCard()
+        return vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(rows))
+      }
+
+      it('gives all-day rows the same background as the current day in Habits, and no other row', async () => {
+        await useList([holiday, breakfast, dinner], 3)
+        const [allDay, ended, later] = screen.getAllByRole('listitem')
+        expect(allDay).toHaveClass(todayClass)
+        expect(allDay).not.toHaveClass('text-muted-foreground')
+        expect(ended).not.toHaveClass(todayClass)
+        expect(later).not.toHaveClass(todayClass)
+      })
+
+      it('puts a gap between the all-day group and the timed events only when both are present', async () => {
+        await useList([holiday, dinner], 2)
+        expect(screen.getByText('Dinner').closest('li')).toHaveClass('mt-2')
+        expect(screen.getByText('Holiday').closest('li')).not.toHaveClass('mt-2')
+      })
+
+      it('has no gap with only timed events or only all-day events', async () => {
+        await useList([breakfast, dinner], 2)
+        for (const li of screen.getAllByRole('listitem')) expect(li).not.toHaveClass('mt-2')
+      })
+
+      it('has no gap with only all-day events', async () => {
+        await useList([holiday], 1)
+        expect(screen.getByRole('listitem')).not.toHaveClass('mt-2')
+      })
+
+      it('shows a rule between ended and not-ended events, and an event in progress is on the later side', async () => {
+        await useList([holiday, breakfast, lunch, dinner], 4)
+        expect(rule()).toBeInTheDocument()
+        expect(rule()?.previousElementSibling).toHaveTextContent('Breakfast')
+        expect(rule()?.nextElementSibling).toHaveTextContent('Lunch')
+        expect(rule()).toHaveClass('w-1/2', 'bg-border')
+      })
+
+      it('shows no rule when every timed event has ended', async () => {
+        await useList([breakfast, timedEvent('t4', 'Coffee', '2026-11-01T10:00:00-08:00', '2026-11-01T11:00:00-08:00')], 2)
+        expect(rule()).not.toBeInTheDocument()
+      })
+
+      it('shows no rule when no timed event has ended', async () => {
+        await useList([lunch, dinner], 2)
+        expect(rule()).not.toBeInTheDocument()
+      })
+
+      it('shows no rule with only all-day events', async () => {
+        await useList([holiday, allDayEvent('b', 'Trip', '2026-10-30', '2026-11-03')], 2)
+        expect(rule()).not.toBeInTheDocument()
+      })
+
+      it('moves the rule as the clock passes an event end, with no new request', async () => {
+        await useList([breakfast, lunch, dinner], 3)
+        expect(rule()?.nextElementSibling).toHaveTextContent('Lunch')
+        await tick(31 * 60_000) // 12:31, past the end of lunch
+        expect(rule()?.previousElementSibling).toHaveTextContent('Lunch')
+        expect(rule()?.nextElementSibling).toHaveTextContent('Dinner')
+        await tick(8 * 60 * 60_000) // past the end of dinner: everything has ended
+        expect(rule()).not.toBeInTheDocument()
+      })
     })
 
     it('treats an event as ended at the moment it ends', async () => {
