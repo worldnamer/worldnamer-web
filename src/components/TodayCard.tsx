@@ -126,7 +126,7 @@ export function TodayCard() {
   })
 
   return (
-    <section aria-labelledby="today-heading" className="w-full lg:w-1/4 lg:order-last">
+    <section aria-labelledby="today-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
         <h2 id="today-heading" className="font-display text-xl tracking-wide">
           Today
