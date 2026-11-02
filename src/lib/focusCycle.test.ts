@@ -1,0 +1,67 @@
+import { expect, it } from 'vitest'
+import { focusReducer, formatRemaining, hasEnded, initialFocusState, PHASES, phaseMs, remainingMs, type FocusState } from './focusCycle'
+
+const lengths = { work: 25, break: 5, longBreak: 20 }
+const MIN = 60_000
+
+it('runs Work, Break, Work, Break, Work, Long break', () => {
+  expect(PHASES).toEqual(['work', 'break', 'work', 'break', 'work', 'longBreak'])
+  expect([0, 1, 5].map((p) => phaseMs(p, lengths))).toEqual([25 * MIN, 5 * MIN, 20 * MIN])
+})
+
+it('starts the first Work phase running from the pickers', () => {
+  const state = focusReducer(initialFocusState, { type: 'start', now: 1000, lengths })
+  expect(state).toEqual({ status: 'running', phase: 0, lengths, endsAt: 1000 + 25 * MIN })
+  expect(remainingMs(state, 1000 + 10 * MIN)).toBe(15 * MIN)
+})
+
+it('holds the next phase at its full length when one runs out, and counts down only once started', () => {
+  let state: FocusState = focusReducer(initialFocusState, { type: 'start', now: 0, lengths })
+  expect(hasEnded(state, 25 * MIN - 1)).toBe(false)
+  expect(hasEnded(state, 25 * MIN)).toBe(true)
+  state = focusReducer(state, { type: 'phaseEnded' })
+  expect(state).toEqual({ status: 'held', phase: 1, lengths })
+  expect(remainingMs(state, 99 * MIN)).toBe(5 * MIN)
+  expect(hasEnded(state, 99 * MIN)).toBe(false)
+  state = focusReducer(state, { type: 'start', now: 100 * MIN, lengths })
+  expect(state).toEqual({ status: 'running', phase: 1, lengths, endsAt: 105 * MIN })
+})
+
+it('walks all six sections and returns to the pickers after the last', () => {
+  let state: FocusState = initialFocusState
+  let clock = 0
+  const seen: number[] = []
+  state = focusReducer(state, { type: 'start', now: clock, lengths })
+  for (let i = 0; i < 6; i++) {
+    if (state.status !== 'running') throw new Error('expected running')
+    seen.push(state.phase)
+    clock = state.endsAt
+    state = focusReducer(state, { type: 'phaseEnded' })
+    if (i < 5) {
+      expect(state.status).toBe('held')
+      clock += MIN
+      state = focusReducer(state, { type: 'start', now: clock, lengths })
+    }
+  }
+  expect(seen).toEqual([0, 1, 2, 3, 4, 5])
+  expect(state).toEqual({ status: 'idle' })
+})
+
+it('ignores actions that do not apply', () => {
+  expect(focusReducer(initialFocusState, { type: 'phaseEnded' })).toBe(initialFocusState)
+  const running = focusReducer(initialFocusState, { type: 'start', now: 0, lengths })
+  expect(focusReducer(running, { type: 'start', now: 5, lengths })).toBe(running)
+})
+
+it('reports no time for the pickers and never a negative time', () => {
+  expect(remainingMs(initialFocusState, 0)).toBe(0)
+  const running = focusReducer(initialFocusState, { type: 'start', now: 0, lengths })
+  expect(remainingMs(running, 999 * MIN)).toBe(0)
+})
+
+it('formats the time left as m:ss, rounded up', () => {
+  expect(formatRemaining(15 * MIN)).toBe('15:00')
+  expect(formatRemaining(15 * MIN - 1)).toBe('15:00')
+  expect(formatRemaining(61_000)).toBe('1:01')
+  expect(formatRemaining(0)).toBe('0:00')
+})
