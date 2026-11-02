@@ -1,16 +1,16 @@
-import { ArmchairIcon, BriefcaseIcon, CoffeeIcon, type LucideIcon } from 'lucide-react'
+import { ArmchairIcon, CoffeeIcon, HammerIcon, type LucideIcon } from 'lucide-react'
 import { formatRemaining, PHASE_LABELS, PHASES, phaseMs, type PhaseKind } from '@/lib/focusCycle'
 import type { FocusLengths } from '@/lib/focusLengths'
 import { cn } from '@/lib/utils'
 
-const ICONS: Record<PhaseKind, LucideIcon> = { work: BriefcaseIcon, break: CoffeeIcon, longBreak: ArmchairIcon }
+const ICONS: Record<PhaseKind, LucideIcon> = { work: HammerIcon, break: CoffeeIcon, longBreak: ArmchairIcon }
 
 // The six sections of the cycle in one row. The current one is a wide bar whose fill is the share of the phase still
 // left, with the time centered on it. Later ones are small outlined icons and finished ones small solid icons. The
 // icons are decoration; each item also carries its name and state as text for a screen reader.
 export function PhaseRow({ phase, lengths, remaining, note }: { phase: number; lengths: FocusLengths; remaining: number; note?: string }) {
   return (
-    <ol aria-label="Focus cycle" className="flex h-9 items-center gap-2">
+    <ol aria-label="Focus cycle" className="flex h-14 items-center gap-2">
       {PHASES.map((kind, index) => {
         const label = PHASE_LABELS[kind]
         const Icon = ICONS[kind]
@@ -26,11 +26,11 @@ export function PhaseRow({ phase, lengths, remaining, note }: { phase: number; l
                 aria-valuemax={total}
                 aria-valuenow={remaining}
                 aria-valuetext={`${time} left`}
-                className="relative h-9 overflow-hidden rounded-md border border-border"
+                className="relative h-14 overflow-hidden rounded-md border border-border"
               >
-                <div className="absolute inset-y-0 left-0 bg-brand/40" style={{ width: `${(remaining / total) * 100}%` }} />
-                <span className="relative flex h-full items-center justify-center gap-1.5 text-sm tabular-nums">
-                  <Icon aria-hidden="true" className="size-4" />
+                <div className="absolute inset-y-0 left-0 bg-brand/40" style={{ width: `${(1 - remaining / total) * 100}%` }} />
+                <span className="relative flex h-full items-center justify-center gap-2 text-2xl tabular-nums">
+                  <Icon aria-hidden="true" className="size-5" />
                   {time}
                 </span>
               </div>

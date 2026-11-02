@@ -100,6 +100,28 @@ describe('running a cycle', () => {
     expect(screen.getByRole('button', { name: 'Work minutes up' })).toBeInTheDocument()
   })
 
+  it('lays the controls out as Stop, Pause, Skip, and Continue takes Pause\'s place', () => {
+    render(<FocusTimerCard />)
+    start()
+    const names = () => screen.getAllByRole('button').map((b) => b.textContent)
+    expect(names()).toEqual(['Stop', 'Pause', 'Skip'])
+    act(() => screen.getByRole('button', { name: 'Pause' }).click())
+    expect(names()).toEqual(['Stop', 'Continue', 'Skip'])
+  })
+
+  it('fills the bar up as the phase runs: empty at the start and when held, full at the end', () => {
+    localStorage.setItem(FOCUS_LENGTHS_KEY, JSON.stringify({ work: 20, break: 5, longBreak: 15 }))
+    render(<FocusTimerCard />)
+    const fill = () => (bar().firstElementChild as HTMLElement).style.width
+    start()
+    expect(fill()).toBe('0%')
+    passTime(5 * MIN)
+    expect(fill()).toBe('25%')
+    passTime(15 * MIN)
+    expect(bar()).toHaveAccessibleName('Break, 5:00 left, ready to start')
+    expect(fill()).toBe('0%')
+  })
+
   it('shows the right phase and time after the clock jumps, as in a throttled background tab', () => {
     localStorage.setItem(FOCUS_LENGTHS_KEY, JSON.stringify({ work: 25, break: 5, longBreak: 20 }))
     render(<FocusTimerCard />)

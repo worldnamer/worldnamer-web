@@ -1,3 +1,4 @@
+import { PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from 'lucide-react'
 import { useState } from 'react'
 import { LengthPicker } from '@/components/LengthPicker'
 import { PhaseRow } from '@/components/PhaseRow'
@@ -9,6 +10,12 @@ import { useFocusTimer } from '@/lib/useFocusTimer'
 
 // Said after the time in the bar's name, for a screen reader.
 const NOTES: Record<string, string | undefined> = { held: 'ready to start', paused: 'paused' }
+
+// All the controls rest as quiet outlines and light up in the brand color under the pointer, a darker shade while
+// pressed. Hover only applies where the input can hover, so a tap on a phone does not leave a button stuck lit. The
+// important marks beat the outline variant's own hover color, whatever order the generated rules come in.
+const CONTROL =
+  'can-hover:hover:border-primary! can-hover:hover:bg-primary! can-hover:hover:text-primary-foreground! active:border-primary/70! active:bg-primary/70! active:text-primary-foreground!'
 
 // The focus timer card: the three length pickers while idle, and the six-section row while a cycle runs. The body and
 // the controls row have fixed heights so the card keeps its size when it switches between the two.
@@ -33,7 +40,7 @@ export function FocusTimerCard() {
           Focus timer
         </h2>
       </div>
-      <div className="grid h-48 grid-rows-[1fr_auto] border-b border-border py-2">
+      <div className="grid h-42 grid-rows-[1fr_auto] border-b border-border py-2">
         <div className="flex items-center justify-center">
           {state.status === 'idle' ? (
             <div className="flex w-full justify-around">
@@ -47,31 +54,40 @@ export function FocusTimerCard() {
             </div>
           )}
         </div>
-        <div className="flex h-8 items-center justify-center gap-2">
+        <div className="grid h-8 grid-cols-[1fr_2fr_1fr] items-center gap-2">
+          {state.status !== 'idle' ? (
+            <Button size="sm" variant="outline" className={CONTROL} onClick={stop}>
+              <SquareIcon aria-hidden="true" />
+              Stop
+            </Button>
+          ) : (
+            <span />
+          )}
           {(state.status === 'idle' || state.status === 'held') && (
-            <Button size="sm" onClick={start}>
+            <Button size="sm" variant="outline" className={CONTROL} onClick={start}>
+              <PlayIcon aria-hidden="true" />
               Start
             </Button>
           )}
           {state.status === 'running' && (
-            <Button size="sm" onClick={pause}>
+            <Button size="sm" variant="outline" className={CONTROL} onClick={pause}>
+              <PauseIcon aria-hidden="true" />
               Pause
             </Button>
           )}
           {state.status === 'paused' && (
-            <Button size="sm" onClick={resume}>
+            <Button size="sm" variant="outline" className={CONTROL} onClick={resume}>
+              <PlayIcon aria-hidden="true" />
               Continue
             </Button>
           )}
-          {state.status !== 'idle' && (
-            <>
-              <Button size="sm" variant="outline" onClick={skip}>
-                Skip
-              </Button>
-              <Button size="sm" variant="outline" onClick={stop}>
-                Stop
-              </Button>
-            </>
+          {state.status !== 'idle' ? (
+            <Button size="sm" variant="outline" className={CONTROL} onClick={skip}>
+              <SkipForwardIcon aria-hidden="true" />
+              Skip
+            </Button>
+          ) : (
+            <span />
           )}
         </div>
       </div>
