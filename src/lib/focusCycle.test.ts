@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { focusReducer, formatRemaining, hasEnded, initialFocusState, PHASES, phaseMs, remainingMs, type FocusState } from './focusCycle'
+import { focusReducer, focusTitle, formatRemaining, hasEnded, initialFocusState, PHASES, phaseMs, remainingMs, type FocusState } from './focusCycle'
 
 const lengths = { work: 25, break: 5, longBreak: 20 }
 const MIN = 60_000
@@ -100,4 +100,12 @@ it('ignores pause, resume and skip where they do not apply', () => {
   const held: FocusState = { status: 'held', phase: 1, lengths }
   expect(focusReducer(held, { type: 'pause', now: 0 })).toBe(held)
   expect(focusReducer(held, { type: 'resume', now: 0 })).toBe(held)
+})
+
+it('words the tab title for each state, and gives none at the pickers', () => {
+  expect(focusTitle(initialFocusState, 0)).toBeNull()
+  const r = running(0)
+  expect(focusTitle(r, 20 * MIN + 48_000)).toBe('4:12 · Work')
+  expect(focusTitle(focusReducer(r, { type: 'pause', now: 20 * MIN + 48_000 }), 99 * MIN)).toBe('Paused · Work · 4:12')
+  expect(focusTitle({ status: 'held', phase: 1, lengths }, 0)).toBe('Break, 5:00, ready')
 })

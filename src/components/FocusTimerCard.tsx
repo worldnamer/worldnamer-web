@@ -3,6 +3,8 @@ import { LengthPicker } from '@/components/LengthPicker'
 import { PhaseRow } from '@/components/PhaseRow'
 import { Button } from '@/components/ui/button'
 import { loadFocusLengths, saveFocusLengths, type FocusLengths } from '@/lib/focusLengths'
+import { focusTitle } from '@/lib/focusCycle'
+import { useDocumentTitle } from '@/lib/useDocumentTitle'
 import { useFocusTimer } from '@/lib/useFocusTimer'
 
 // Said after the time in the bar's name, for a screen reader.
@@ -14,7 +16,9 @@ const NOTES: Record<string, string | undefined> = { held: 'ready to start', paus
 export function FocusTimerCard() {
   // Read from storage once, on the first render.
   const [lengths, setLengths] = useState<FocusLengths>(loadFocusLengths)
-  const { state, remaining, start, pause, resume, skip, stop } = useFocusTimer(lengths)
+  const { state, now, remaining, start, pause, resume, skip, stop } = useFocusTimer(lengths)
+
+  useDocumentTitle(focusTitle(state, now))
 
   function change(key: keyof FocusLengths, minutes: number) {
     const next = { ...lengths, [key]: minutes }

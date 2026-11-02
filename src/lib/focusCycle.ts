@@ -92,3 +92,19 @@ export function formatRemaining(ms: number): string {
   const seconds = Math.ceil(ms / 1000)
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
+
+// The text for the browser tab while the timer is on, or null at the pickers (the tab keeps its own title). Running is
+// "4:12 · Work", paused is "Paused · Work · 4:12" and a held phase is "Break, 5:00, ready".
+export function focusTitle(state: FocusState, now: number): string | null {
+  if (state.status === 'idle') return null
+  const label = PHASE_LABELS[PHASES[state.phase]]
+  const time = formatRemaining(remainingMs(state, now))
+  switch (state.status) {
+    case 'running':
+      return `${time} · ${label}`
+    case 'paused':
+      return `Paused · ${label} · ${time}`
+    case 'held':
+      return `${label}, ${time}, ready`
+  }
+}

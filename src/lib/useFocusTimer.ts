@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
+import { playChime, prepareChime } from '@/lib/chime'
 import { focusReducer, hasEnded, initialFocusState, remainingMs } from '@/lib/focusCycle'
 import type { FocusLengths } from '@/lib/focusLengths'
 
@@ -13,6 +14,8 @@ export function useFocusTimer(lengths: FocusLengths) {
   const [now, setNow] = useState(Date.now)
 
   const start = useCallback(() => {
+    // Inside the click, because browsers only allow sound that a click has unlocked.
+    prepareChime()
     const t = Date.now()
     setNow(t)
     dispatch({ type: 'start', now: t, lengths })
@@ -24,6 +27,7 @@ export function useFocusTimer(lengths: FocusLengths) {
     dispatch({ type: 'pause', now: t })
   }, [])
   const resume = useCallback(() => {
+    prepareChime()
     const t = Date.now()
     setNow(t)
     dispatch({ type: 'resume', now: t })
@@ -37,11 +41,15 @@ export function useFocusTimer(lengths: FocusLengths) {
     const id = setInterval(() => {
       const t = Date.now()
       setNow(t)
-      if (hasEnded(state, t)) dispatch({ type: 'phaseEnded' })
+      // The chime is for a phase that ran out, so Skip and Stop (which never get here) stay silent.
+      if (hasEnded(state, t)) {
+        playChime()
+        dispatch({ type: 'phaseEnded' })
+      }
     }, TICK_MS)
     // Cleared on pause, hold, stop and skip (the state stops running), when the phase changes, and when the card goes away.
     return () => clearInterval(id)
   }, [running, state])
 
-  return { state, remaining: remainingMs(state, now), start, pause, resume, skip, stop }
+  return { state, now, remaining: remainingMs(state, now), start, pause, resume, skip, stop }
 }

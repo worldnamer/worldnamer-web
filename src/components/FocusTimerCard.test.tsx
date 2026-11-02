@@ -1,10 +1,17 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { playChime, prepareChime } from '@/lib/chime'
 import { FOCUS_LENGTHS_KEY } from '@/lib/focusLengths'
 import { FocusTimerCard } from './FocusTimerCard'
 
-beforeEach(() => localStorage.clear())
+// The sound itself is tested with the chime; here only when it is asked for.
+vi.mock('@/lib/chime', () => ({ prepareChime: vi.fn(), playChime: vi.fn() }))
+
+beforeEach(() => {
+  localStorage.clear()
+  vi.clearAllMocks()
+})
 
 const minutesOf = (label: string) => screen.getByRole('button', { name: `${label} minutes up` }).parentElement!.querySelector('.tabular-nums')!.textContent
 
@@ -190,5 +197,73 @@ describe('running a cycle', () => {
     press('Stop')
     expect(screen.getByRole('button', { name: 'Work minutes up' })).toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('shows the state in the tab title and restores the original on Stop', () => {
+    document.title = 'worldnamer'
+    render(<FocusTimerCard />)
+    expect(document.title).toBe('worldnamer')
+    start()
+    expect(document.title).toBe('15:00 · Work')
+    passTime(10 * MIN + 48_000)
+    expect(document.title).toBe('4:12 · Work')
+    press('Pause')
+    expect(document.title).toBe('Paused · Work · 4:12')
+    press('Continue')
+    passTime(4 * MIN + 12_000)
+    expect(document.title).toBe('Break, 5:00, ready')
+    press('Stop')
+    expect(document.title).toBe('worldnamer')
+  })
+
+  it('restores the title at the end of the cycle and when the card goes away', () => {
+    document.title = 'worldnamer'
+    const first = render(<FocusTimerCard />)
+    start()
+    for (let i = 0; i < 5; i++) press('Skip')
+    start()
+    expect(document.title).toBe('15:00 · Long break')
+    passTime(15 * MIN)
+    expect(document.title).toBe('worldnamer')
+    first.unmount()
+
+    const { unmount } = render(<FocusTimerCard />)
+    start()
+    expect(document.title).toBe('15:00 · Work')
+    unmount()
+    expect(document.title).toBe('worldnamer')
+  })
+
+  it('chimes once for each phase that runs out, including the last, and unlocks audio on Start', () => {
+    render(<FocusTimerCard />)
+    start()
+    expect(prepareChime).toHaveBeenCalledTimes(1)
+    passTime(15 * MIN)
+    expect(playChime).toHaveBeenCalledTimes(1)
+    // Waiting while held does not chime again.
+    passTime(10 * MIN)
+    expect(playChime).toHaveBeenCalledTimes(1)
+    start()
+    expect(prepareChime).toHaveBeenCalledTimes(2)
+    passTime(5 * MIN)
+    expect(playChime).toHaveBeenCalledTimes(2)
+    for (let i = 0; i < 3; i++) press('Skip')
+    start()
+    passTime(15 * MIN)
+    expect(playChime).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('button', { name: 'Work minutes up' })).toBeInTheDocument()
+  })
+
+  it('does not chime on Skip or Stop', () => {
+    render(<FocusTimerCard />)
+    start()
+    passTime(MIN)
+    press('Skip')
+    start()
+    press('Pause')
+    press('Skip')
+    press('Stop')
+    passTime(60 * MIN)
+    expect(playChime).not.toHaveBeenCalled()
   })
 })
