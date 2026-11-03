@@ -159,7 +159,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
             </li>
           ) : (
             <li>
-              <Button ref={plusRef} variant="ghost" size="icon-sm" aria-label="Add task" onClick={() => setDrafting(true)}>
+              <Button ref={plusRef} variant="ghost" size="icon-sm" className="focus-visible:ring-inset" aria-label="Add task" onClick={() => setDrafting(true)}>
                 <PlusIcon />
               </Button>
             </li>
