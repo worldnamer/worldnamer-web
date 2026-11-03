@@ -329,7 +329,16 @@ export function tasksHandlers(initialByList: Record<number, MockTask[]> = {}) {
     return new HttpResponse(null, { status: 204 })
   })
 
-  return [list, create, update, remove]
+  // 204 once the list's done tasks are gone, also when none were; 404 for a list that is not a key.
+  const clearDone = http.delete(`${API_BASE}/task_lists/:listId/done_tasks`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const tasks = byList.get(String(params.listId))
+    if (!tasks) return notFound()
+    byList.set(String(params.listId), tasks.filter((t) => !t.done))
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, create, update, remove, clearDone]
 }
 
 // The Google Calendar connection. googleCalendarHandlers(status, items) answers GET /google_calendar_connection/events

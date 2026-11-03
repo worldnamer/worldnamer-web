@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PlusIcon } from 'lucide-react'
+import { BrushCleaningIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
-import { createTask, deleteTask, listTasks, type Task } from '@/api/tasks'
+import { clearDoneTasks, createTask, deleteTask, listTasks, type Task } from '@/api/tasks'
 import type { TaskList } from '@/api/taskLists'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { TaskItem } from '@/components/TaskItem'
@@ -45,6 +45,9 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
   const [open, setOpen] = useState(false)
   const [target, setTarget] = useState<Task | null>(null)
   const opener = useRef<HTMLElement | null>(null) // the delete button that opened the dialog
+  // The second dialog, for clearing every done task. It names no task, so it needs no target.
+  const [clearOpen, setClearOpen] = useState(false)
+  const broomRef = useRef<HTMLButtonElement>(null)
   const [deletingIds, setDeletingIds] = useState<number[]>([])
 
   // The + row is replaced by the draft, so focus can only go back to it once the draft has gone.
@@ -103,6 +106,22 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
     onSettled: (_result, _error, { task }) => setDeletingIds((ids) => ids.filter((id) => id !== task.id)),
   })
 
+  // Takes the done task ids as they were when the user confirmed, and removes just those from the cache: a task checked
+  // while the request is in flight is not in the snapshot, so it stays on screen. Pessimistic, and a 204 fetches nothing,
+  // like the single delete. A 404 means the list was already gone, so the lists and tasks are fetched again quietly.
+  const clear = useMutation({
+    mutationFn: ({ listId }: { listId: number; ids: number[] }) => clearDoneTasks(listId),
+    onMutate: () => onError(null),
+    onSuccess: ({ alreadyGone }, { listId, ids }) => {
+      queryClient.setQueryData<Task[]>(['tasks', listId], (old) => old?.filter((t) => !ids.includes(t.id)))
+      if (alreadyGone) {
+        void queryClient.invalidateQueries({ queryKey: ['task_lists'] })
+        void queryClient.invalidateQueries({ queryKey: ['tasks', listId], exact: true })
+      }
+    },
+    onError: () => onError("Couldn't clear the done tasks. Try again."),
+  })
+
   function askToDelete(task: Task, button: HTMLElement) {
     opener.current = button
     setTarget(task)
@@ -158,9 +177,22 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
               />
             </li>
           ) : (
-            <li>
+            <li className="flex items-center">
               <Button ref={plusRef} variant="ghost" size="icon-sm" className="focus-visible:ring-inset" aria-label="Add task" onClick={() => setDrafting(true)}>
                 <PlusIcon />
+              </Button>
+              {/* At the right edge, under the delete buttons of the rows above. It shares the + row, so it goes
+                  when the draft takes the row's place. */}
+              <Button
+                ref={broomRef}
+                variant="ghost"
+                size="icon-sm"
+                className="ml-auto text-muted-foreground hover:text-foreground focus-visible:ring-inset"
+                aria-label="Delete all done tasks"
+                disabled={!data.some((t) => t.done) || clear.isPending}
+                onClick={() => setClearOpen(true)}
+              >
+                <BrushCleaningIcon />
               </Button>
             </li>
           )}
@@ -176,6 +208,17 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
         // After a confirmed delete the task's own button is going away, so focus goes to the + row; after Cancel it
         // goes back to the button that opened the dialog.
         focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
+      />
+      <ConfirmDeleteDialog
+        open={clearOpen}
+        onOpenChange={setClearOpen}
+        title="Delete all done tasks?"
+        onConfirm={() => {
+          const ids = data?.filter((t) => t.done).map((t) => t.id) ?? []
+          clear.mutate({ listId: list.id, ids })
+        }}
+        // After a confirmed clear the broom is disabled, so focus goes to the +; after Cancel it goes back to the broom.
+        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : broomRef.current)}
       />
     </div>
   )

@@ -1110,6 +1110,152 @@ describe('deleting a task', () => {
   })
 })
 
+describe('deleting all done tasks', () => {
+  const broom = () => screen.getByRole('button', { name: 'Delete all done tasks' })
+  const plus = () => screen.getByRole('button', { name: 'Add task' })
+  const dialog = () => screen.findByRole('alertdialog', { name: 'Delete all done tasks?' })
+
+  // Records the path of every DELETE of a list's done tasks and passes it on, or answers it with `answer` when given.
+  function recordClears(answer?: () => Response | Promise<Response>) {
+    const paths: string[] = []
+    server.use(
+      http.delete(`${API_BASE}/task_lists/:listId/done_tasks`, ({ request }) => {
+        paths.push(new URL(request.url).pathname)
+        return answer?.()
+      }),
+    )
+    return paths
+  }
+
+  async function askToClear(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Delete all done tasks' }))
+    return dialog()
+  }
+
+  it('labels the broom, and puts it in the + row at the right edge', async () => {
+    server.use(...both())
+    renderTasks()
+    const button = await screen.findByRole('button', { name: 'Delete all done tasks' })
+    expect(button.parentElement).toBe(plus().parentElement)
+    expect(button.parentElement).toHaveClass('flex', 'items-center')
+    expect(button).toHaveClass('ml-auto')
+  })
+
+  it('is disabled with nothing done and enabled once a task is checked', async () => {
+    const user = userEvent.setup()
+    server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text: 'Milk', done: false }] }))
+    renderTasks()
+    expect(await screen.findByRole('button', { name: 'Delete all done tasks' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
+    await waitFor(() => expect(broom()).toBeEnabled())
+  })
+
+  it('opens "Delete all done tasks?" when tapped', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+    const confirm = await askToClear(user)
+    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('hides the broom while a task is being drafted and brings it back when the draft closes', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    renderTasks()
+    await user.click(await screen.findByRole('button', { name: 'Add task' }))
+    expect(screen.queryByRole('button', { name: 'Delete all done tasks' })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(await screen.findByRole('button', { name: 'Delete all done tasks' })).toBeInTheDocument()
+  })
+
+  it('sends one DELETE on confirm, removes the done tasks without fetching again, and puts focus on the +', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const gets = recordTaskGets()
+    const clears = recordClears()
+    renderTasks()
+
+    const confirm = await askToClear(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Milk']))
+    await waitFor(() => expect(plus()).toHaveFocus())
+    expect(clears).toEqual(['/api/v1/task_lists/4/done_tasks'])
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
+    expect(gets).toEqual(['4'])
+    expect(broom()).toBeDisabled()
+  })
+
+  it('disables the broom while the DELETE is in flight', async () => {
+    const user = userEvent.setup()
+    const answer = gate()
+    server.use(...both())
+    recordClears(async () => {
+      await answer.wait()
+      return new HttpResponse(null, { status: 204 })
+    })
+    renderTasks()
+
+    const confirm = await askToClear(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(broom()).toBeDisabled())
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+    answer.open()
+    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Milk']))
+  })
+
+  it('sends nothing on Cancel, keeps the tasks, and returns focus to the broom', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const clears = recordClears()
+    renderTasks()
+
+    const confirm = await askToClear(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(broom()).toHaveFocus()
+    expect(clears).toEqual([])
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+  })
+
+  it('counts a 404 (list deleted elsewhere) as cleared, and fetches the lists and tasks again quietly', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    const gets = recordTaskGets()
+    let listsGets = 0
+    server.use(
+      http.get(`${API_BASE}/task_lists`, () => {
+        listsGets += 1
+      }),
+    )
+    recordClears(() => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 }))
+    renderTasks()
+
+    const confirm = await askToClear(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(listsGets).toBe(2))
+    await waitFor(() => expect(gets).toEqual(['4', '4']))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keeps the tasks after a failure and says so on the line', async () => {
+    const user = userEvent.setup()
+    server.use(...both())
+    recordClears(() => new HttpResponse(null, { status: 500 }))
+    renderTasks()
+
+    const confirm = await askToClear(user)
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't clear the done tasks. Try again.")
+    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
+    await waitFor(() => expect(broom()).toBeEnabled())
+  })
+})
+
 describe("a task's due date", () => {
   // The current year is read from the clock, so it is pinned: 1 November 2026, a Sunday, at noon in Los Angeles.
   beforeEach(() => {
