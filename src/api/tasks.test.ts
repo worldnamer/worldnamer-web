@@ -4,7 +4,7 @@ import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { API_BASE, errorBody, REFRESH_TOKEN, tasksHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { createTask, deleteTask, listTasks, updateTask } from './tasks'
+import { clearDoneTasks, createTask, deleteTask, listTasks, updateTask } from './tasks'
 
 beforeEach(() => {
   clearAccessToken()
@@ -144,6 +144,40 @@ describe('deleteTask', () => {
   it('rejects with an ApiError on a 500', async () => {
     server.use(http.delete(`${API_BASE}/task_lists/4/tasks/7`, () => new HttpResponse(null, { status: 500 })))
     const error = await deleteTask(4, 7).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 500 })
+  })
+})
+
+describe('clearDoneTasks', () => {
+  it("sends DELETE to the list's done tasks and resolves as cleared; the undone and other lists stay", async () => {
+    let method: string | null = null
+    server.use(
+      http.delete(`${API_BASE}/task_lists/4/done_tasks`, ({ request }) => {
+        method = request.method
+      }),
+      ...tasksHandlers({
+        4: [
+          { id: 7, text: 'Milk', done: true },
+          { id: 8, text: 'Eggs', done: false },
+        ],
+        5: [{ id: 9, text: 'Sweep', done: true }],
+      }),
+    )
+    await expect(clearDoneTasks(4)).resolves.toEqual({ alreadyGone: false })
+    expect(method).toBe('DELETE')
+    await expect(listTasks(4)).resolves.toEqual([{ id: 8, text: 'Eggs', done: false, due_on: null }])
+    await expect(listTasks(5)).resolves.toHaveLength(1)
+  })
+
+  it('resolves as already gone on a 404, such as a list deleted elsewhere', async () => {
+    server.use(...tasksHandlers({}))
+    await expect(clearDoneTasks(4)).resolves.toEqual({ alreadyGone: true })
+  })
+
+  it('rejects with an ApiError on a 500', async () => {
+    server.use(http.delete(`${API_BASE}/task_lists/4/done_tasks`, () => new HttpResponse(null, { status: 500 })))
+    const error = await clearDoneTasks(4).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ status: 500 })
   })

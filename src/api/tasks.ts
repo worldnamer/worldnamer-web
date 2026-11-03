@@ -56,3 +56,13 @@ export async function deleteTask(listId: number, id: number): Promise<{ alreadyG
   if (!response.ok) throw await apiErrorFrom(response)
   return { alreadyGone: false }
 }
+
+// DELETE /task_lists/:listId/done_tasks: deletes every done task in the list in one request. Resolves on 204, which is
+// also the answer when none were done, and on 404: a list that is already gone is what was wanted. `alreadyGone` says
+// which, so the caller can fetch again to catch up. Rejects with an ApiError on any other answer.
+export async function clearDoneTasks(listId: number): Promise<{ alreadyGone: boolean }> {
+  const response = await apiFetch(`/task_lists/${listId}/done_tasks`, { method: 'DELETE' })
+  if (response.status === 404) return { alreadyGone: true }
+  if (!response.ok) throw await apiErrorFrom(response)
+  return { alreadyGone: false }
+}
