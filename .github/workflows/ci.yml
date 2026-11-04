@@ -43,3 +43,22 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  # Its own job so that a newly published advisory shows up as a separate red check without hiding whether lint,
+  # types, tests and build passed. It can fail with no code change when a new advisory is published.
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Runtime packages only, and only high severity and above.
+      - name: Security (npm audit)
+        run: npm audit --omit=dev --audit-level=high
