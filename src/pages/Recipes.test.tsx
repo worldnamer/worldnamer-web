@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
@@ -243,5 +243,162 @@ describe('the recipe card', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Chili' }))
     expect(await screen.findByRole('heading', { name: 'Chili' })).toBeInTheDocument()
     expect(screen.getByText('Simmer.')).toBeInTheDocument()
+  })
+})
+
+describe('adding a recipe', () => {
+  const addButton = () => screen.findByRole('button', { name: 'Add recipe' })
+
+  it('shows the button with a populated, an empty and a failed list', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers(recipes))
+    renderApp('/recipes')
+    expect(await addButton()).toBeEnabled()
+    expect(await screen.findByRole('link', { name: 'Chili' })).toBeInTheDocument()
+  })
+
+  it('shows the button with an empty list', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers())
+    renderApp('/recipes')
+    expect(await addButton()).toBeEnabled()
+    expect(await screen.findByText('No recipes yet.')).toBeInTheDocument()
+  })
+
+  it('shows the button with a failed list', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      http.get(`${API_BASE}/recipes`, () => HttpResponse.json({}, { status: 500 })),
+    )
+    renderApp('/recipes')
+    expect(await addButton()).toBeEnabled()
+    expect(await screen.findByText('Could not load recipes.')).toBeInTheDocument()
+  })
+
+  it('creates a recipe, opens its card with the empty areas, and lists it in order, highlighted, with no fetch of the card', async () => {
+    setSessionFlag()
+    let cardGets = 0
+    server.use(
+      refreshHandler,
+      http.get(`${API_BASE}/recipes/:id`, () => {
+        cardGets++
+        return HttpResponse.json({}, { status: 500 })
+      }),
+      ...recipesHandlers(recipes),
+    )
+    renderApp('/recipes')
+    await userEvent.click(await addButton())
+
+    const card = await screen.findByRole('region', { name: 'Recipe card' })
+    expect(within(card).getByRole('heading', { name: 'New recipe' })).toBeInTheDocument()
+    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
+      expect(within(card).getByText(line)).toBeInTheDocument()
+    }
+    const rolodex = screen.getByRole('region', { name: 'Recipes' })
+    await waitFor(() =>
+      expect(within(rolodex).getAllByRole('link').map((l) => l.textContent)).toEqual([
+        'Apple pie',
+        'bread',
+        'Chili',
+        'New recipe',
+      ]),
+    )
+    const added = within(rolodex).getByRole('link', { name: 'New recipe' })
+    expect(added).toHaveAttribute('href', '/recipes/4')
+    expect(added).toHaveAttribute('aria-current', 'page')
+    expect(cardGets).toBe(0)
+  })
+
+  it('makes two recipes on two clicks', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers())
+    renderApp('/recipes')
+    await userEvent.click(await addButton())
+    await screen.findByRole('region', { name: 'Recipe card' })
+    await userEvent.click(await addButton())
+
+    await waitFor(() => expect(screen.getAllByRole('link', { name: 'New recipe' })).toHaveLength(2))
+    const rolodex = screen.getByRole('region', { name: 'Recipes' })
+    expect(within(rolodex).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual(['/recipes/1', '/recipes/2'])
+  })
+
+  it('disables the button while pending and sends one POST for two synchronous clicks', async () => {
+    setSessionFlag()
+    let posts = 0
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const [list, show, create] = recipesHandlers(recipes)
+    server.use(
+      refreshHandler,
+      http.post(`${API_BASE}/recipes`, async (info) => {
+        posts++
+        await held
+        return create.run(info).then((r) => r?.response)
+      }),
+      list,
+      show,
+    )
+    renderApp('/recipes')
+    const button = await addButton()
+    button.click()
+    button.click()
+
+    const pending = await screen.findByRole('button', { name: 'Adding...' })
+    expect(pending).toBeDisabled()
+    release()
+    await screen.findByRole('region', { name: 'Recipe card' })
+    expect(posts).toBe(1)
+    expect(await addButton()).toBeEnabled()
+  })
+
+  it('shows a fixed failure line on a 500, keeps the URL and list, and clears it on the next click', async () => {
+    setSessionFlag()
+    let fail = true
+    const [list, show, create] = recipesHandlers(recipes)
+    server.use(
+      refreshHandler,
+      http.post(`${API_BASE}/recipes`, (info) =>
+        fail
+          ? HttpResponse.json({ error: { code: 'boom', message: 'secret server text' } }, { status: 500 })
+          : create.run(info).then((r) => r?.response),
+      ),
+      list,
+      show,
+    )
+    renderApp('/recipes/1')
+    await userEvent.click(await addButton())
+
+    const alert = await screen.findByText('Could not add the recipe. Try again.')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(alert).toHaveClass('text-destructive')
+    expect(screen.queryByText(/secret server text/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'bread' })).toHaveAttribute('aria-current', 'page')
+    expect(within(screen.getByRole('region', { name: 'Recipes' })).getAllByRole('link')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Add recipe' })).toBeEnabled()
+
+    fail = false
+    await userEvent.click(screen.getByRole('button', { name: 'Add recipe' }))
+    await waitFor(() => expect(screen.queryByText('Could not add the recipe. Try again.')).not.toBeInTheDocument())
+    expect(await screen.findByRole('heading', { name: 'New recipe' })).toBeInTheDocument()
+  })
+
+  it('sends no body and no Content-Type', async () => {
+    setSessionFlag()
+    let seen: { body: string; type: string | null } | undefined
+    const [list, show, create] = recipesHandlers()
+    server.use(
+      refreshHandler,
+      http.post(`${API_BASE}/recipes`, async (info) => {
+        seen = { body: await info.request.clone().text(), type: info.request.headers.get('Content-Type') }
+        return create.run(info).then((r) => r?.response)
+      }),
+      list,
+      show,
+    )
+    renderApp('/recipes')
+    await userEvent.click(await addButton())
+    await screen.findByRole('region', { name: 'Recipe card' })
+    expect(seen).toEqual({ body: '', type: null })
   })
 })

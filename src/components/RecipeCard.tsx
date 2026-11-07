@@ -15,8 +15,14 @@ export function RecipeCard() {
 }
 
 function SelectedRecipe({ id }: { id: string }) {
-  // retry: false so a 404 redirects at once, and a down API shows the failure line at once.
-  const { data, error, isPending } = useQuery({ queryKey: ['recipes', id], queryFn: () => getRecipe(id), retry: false })
+  // retry: false so a 404 redirects at once, and a down API shows the failure line at once. The short staleTime keeps
+  // the card from refetching on mount right after Add recipe filled this entry from the create answer.
+  const { data, error, isPending } = useQuery({
+    queryKey: ['recipes', id],
+    queryFn: () => getRecipe(id),
+    retry: false,
+    staleTime: 10_000,
+  })
 
   if (error instanceof ApiError && error.status === 404) return <Navigate to="/recipes" replace />
   if (isPending) return null
