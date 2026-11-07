@@ -11,23 +11,23 @@
 //                           event.preventDefault() (so a password can never end up in the URL)
 //                         - on failure, an element with role "alert" holding loginErrorMessage(status) text
 //                           (src/auth/errors.ts); the dialog stays open
-//   Logged in header:   a button with accessible name "Account menu" (replaces the Login button). Activating it
-//                       opens a Radix DropdownMenu: the username as PLAIN TEXT (not a link, button or menuitem)
-//                       and exactly one menuitem, "Log out".
+//   Logged in header:   a button with accessible name "Menu" (replaces the Login button). Activating it
+//                       opens a Radix DropdownMenu: the section links, a separator, the username as PLAIN TEXT (not a link, button or menuitem)
+//                       and the menuitem "Log out".
 //   "/" route:          logged out -> the dossier (region "About John"); logged in -> the placeholder
 //                       <section aria-label="Logged-in home"> (role "region", name "Logged-in home"), empty for now.
 //   "/resume":          identical in every auth state; never waits for the session.
 //   Session restore:    uses the shared queryClient (src/lib/queryClient.ts) and restoreSession from web-1.
 //                       No hasSession flag -> dossier + Login button at once, NO request at all.
-//                       Flag set and refresh pending -> NONE of dossier, Login button, Account menu is rendered
+//                       Flag set and refresh pending -> NONE of dossier, Login button, Menu is rendered
 //                       (an empty reserved slot). Then 200 -> logged-in view + menu; 401 -> dossier + Login, flag cleared.
 //
 // SUGGESTED (not tested directly) file layout, follow it unless there is a reason not to:
 //   src/auth/useSession.ts            useSession(): { pending: boolean; user: SessionUser | null }
 //                                     (useQuery(['session'], restoreSession, { enabled/retry/staleTime as in the plan }))
 //   src/components/LoginDialog.tsx    shadcn Dialog + the form (controlled state for the two fields)
-//   src/components/AccountMenu.tsx    shadcn DropdownMenu
-//   src/components/Header.tsx         shows slot: pending -> empty, user -> AccountMenu, none -> Login button
+//   src/components/Menu.tsx    shadcn DropdownMenu
+//   src/components/Header.tsx         shows slot: pending -> empty, user -> Menu, none -> Login button
 //   src/pages/Home.tsx                dossier or the logged-in placeholder
 //   src/components/LoggedInHome.tsx   the placeholder
 //
@@ -42,6 +42,7 @@ import App from './App'
 import { hasSessionFlag, setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
+import { sections } from '@/lib/sections'
 import {
   API_BASE,
   VALID_PASSWORD,
@@ -83,7 +84,7 @@ afterEach(() => {
 const dossier = () => screen.queryByRole('region', { name: 'About John' })
 const loggedInView = () => screen.queryByRole('region', { name: 'Logged-in home' })
 const loginButton = () => screen.queryByRole('button', { name: 'Login' })
-const accountMenu = () => screen.queryByRole('button', { name: 'Account menu' })
+const accountMenu = () => screen.queryByRole('button', { name: 'Menu' })
 
 // A gate that holds a handler's answer until the test opens it, and tells the test when the request arrived.
 function gate() {
@@ -99,7 +100,7 @@ async function renderLoggedIn(route = '/') {
   setSessionFlag()
   server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
   renderApp(route)
-  return screen.findByRole('button', { name: 'Account menu' })
+  return screen.findByRole('button', { name: 'Menu' })
 }
 
 async function openLoginDialog(user: ReturnType<typeof userEvent.setup>) {
@@ -219,7 +220,7 @@ describe('login form', () => {
     await user.type(within(dialog).getByLabelText('Username'), VALID_USERNAME)
     await user.type(within(dialog).getByLabelText('Password'), `${VALID_PASSWORD}{Enter}`)
 
-    expect(await screen.findByRole('button', { name: 'Account menu' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Menu' })).toBeInTheDocument()
   })
 
   it('shows one generic message for wrong credentials and stays open', async () => {
@@ -288,7 +289,7 @@ describe('successful login', () => {
     const dialog = await openLoginDialog(user)
     await fillAndSubmit(user, dialog, VALID_USERNAME, VALID_PASSWORD)
 
-    expect(await screen.findByRole('button', { name: 'Account menu' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Menu' })).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(loginButton()).not.toBeInTheDocument()
     expect(loggedInView()).toBeInTheDocument()
@@ -302,20 +303,36 @@ describe('successful login', () => {
 
     const dialog = await openLoginDialog(user)
     await fillAndSubmit(user, dialog, VALID_USERNAME, VALID_PASSWORD)
-    await user.click(await screen.findByRole('button', { name: 'Account menu' }))
+    await user.click(await screen.findByRole('button', { name: 'Menu' }))
 
     const menu = await screen.findByRole('menu')
     const name = within(menu).getByText(VALID_USERNAME)
     expect(name.closest('a, button, [role="menuitem"]')).toBeNull()
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(1)
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(sections.length + 1)
+    for (const section of sections) {
+      expect(within(menu).getByRole('menuitem', { name: section.label })).toHaveAttribute('href', section.to)
+    }
     expect(within(menu).getByRole('menuitem', { name: 'Log out' })).toBeInTheDocument()
+  })
+})
+
+describe('section menu', () => {
+  it('goes to the Home route when Home is selected', async () => {
+    const user = userEvent.setup()
+    await renderLoggedIn('/resume')
+    expect(loggedInView()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Home' }))
+
+    expect(await screen.findByRole('region', { name: 'Logged-in home' })).toBeInTheDocument()
   })
 })
 
 describe('log out', () => {
   async function openMenuAndLogOut() {
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Account menu' }))
+    await user.click(await screen.findByRole('button', { name: 'Menu' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Log out' }))
   }
 
@@ -423,7 +440,7 @@ describe('session restore on page load', () => {
     expect(screen.getByRole('link', { name: 'Résumé' })).toBeInTheDocument()
 
     g.open()
-    expect(await screen.findByRole('button', { name: 'Account menu' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Menu' })).toBeInTheDocument()
     expect(loggedInView()).toBeInTheDocument()
   })
 
@@ -465,7 +482,7 @@ describe('habit list', () => {
     expect(await screen.findByText('Stretch')).toBeInTheDocument()
     expect(fetches).toBe(1)
 
-    await user.click(screen.getByRole('button', { name: 'Account menu' }))
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Log out' }))
     expect(await screen.findByRole('button', { name: 'Login' })).toBeInTheDocument()
     expect(screen.queryByText('Stretch')).not.toBeInTheDocument()
@@ -509,7 +526,7 @@ describe('/resume in every auth state', () => {
     await g.requested
     expect(resumeHeading()).toBeInTheDocument()
     g.open()
-    await screen.findByRole('button', { name: 'Account menu' })
+    await screen.findByRole('button', { name: 'Menu' })
     expect(resumeHeading()).toBeInTheDocument()
   })
 
