@@ -178,13 +178,17 @@ describe('the recipe card', () => {
     expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
   })
 
-  it('shows no time on the heading line when it is null', async () => {
+  it('shows 0 min on the heading line when a time is null, and none on Ingredients', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Salad', cook_instructions: 'Toss.' }]))
     renderApp('/recipes/2')
 
     const cookLine = (await screen.findByRole('heading', { name: 'Cook' })).parentElement!
-    expect(cookLine.children).toHaveLength(1)
+    expect(within(cookLine).getByText('0 min')).toHaveClass('text-sm', 'text-muted-foreground')
+    const prepLine = screen.getByRole('heading', { name: 'Prep' }).parentElement!
+    expect(within(prepLine).getByText('0 min')).toBeInTheDocument()
+    const ingredientsLine = screen.getByRole('heading', { name: 'Ingredients' }).parentElement!
+    expect(ingredientsLine.children).toHaveLength(1)
   })
 
   it('renders markup in recipe text as text', async () => {

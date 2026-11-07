@@ -30,13 +30,15 @@ function SelectedRecipe({ id }: { id: string }) {
   return <Card recipe={data} />
 }
 
-// An area of the card: a heading with a rule under it, and the time (when there is one) on the heading line, right-aligned.
+// An area of the card: a heading with a rule under it, and, for Prep and Cook, the time on the heading line, right-aligned ("0 min" when none is set).
 function Area({ title, minutes, children }: { title: string; minutes?: number | null; children: ReactNode }) {
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between border-b border-border pb-1">
         <h3 className="font-bold">{title}</h3>
-        {minutes != null && <span className="text-sm text-muted-foreground">{formatMinutes(minutes)}</span>}
+        {minutes !== undefined && (
+          <span className="text-sm text-muted-foreground">{formatMinutes(minutes ?? 0)}</span>
+        )}
       </div>
       <div className="pt-2">{children}</div>
     </div>
