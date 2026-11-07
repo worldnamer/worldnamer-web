@@ -142,7 +142,7 @@ describe('the recipe card', () => {
     expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('Mix.\nKnead.')
     const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
     expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
-    expect(within(prepLine).getByText('20 min')).toBeInTheDocument()
+    expect(within(prepLine).getByRole('textbox', { name: 'Prep minutes' })).toHaveValue('20')
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
 
@@ -175,21 +175,21 @@ describe('the recipe card', () => {
     renderApp('/recipes/2')
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
-    expect(within(card).getByText('2 hr 5 min')).toBeInTheDocument()
+    expect(within(card).getByRole('textbox', { name: 'Prep minutes' })).toHaveValue('125')
     expect(within(card).getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('Simmer.')
     expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('')
     expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
   })
 
-  it('shows 0 min on the heading line when a time is null, and none on Ingredients', async () => {
+  it('shows an empty minutes box on the heading line when a time is null, and none on Ingredients', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Salad', cook_instructions: 'Toss.' }]))
     renderApp('/recipes/2')
 
     const cookLine = (await screen.findByRole('heading', { name: 'Cook' })).parentElement!
-    expect(within(cookLine).getByText('0 min')).toHaveClass('text-sm', 'text-muted-foreground')
+    expect(within(cookLine).getByRole('textbox', { name: 'Cook minutes' })).toHaveValue('')
     const prepLine = screen.getByRole('heading', { name: 'Prep' }).parentElement!
-    expect(within(prepLine).getByText('0 min')).toBeInTheDocument()
+    expect(within(prepLine).getByRole('textbox', { name: 'Prep minutes' })).toHaveValue('')
     const ingredientsLine = screen.getByRole('heading', { name: 'Ingredients' }).parentElement!
     expect(ingredientsLine.children).toHaveLength(1)
   })

@@ -406,3 +406,87 @@ describe('where data goes in', () => {
     for (const box of screen.getAllByRole('textbox')) expect(box).toHaveClass('border', 'border-border')
   })
 })
+
+describe('the minutes boxes', () => {
+  const minutesBox = (name: string) => screen.findByRole('textbox', { name })
+
+  it('sit on their heading lines with a placeholder, a border, a limit and no hr min text', async () => {
+    setSessionFlag()
+    mockRecipes([{ id: 1, title: 'Stew', prep_minutes: 125 }])
+    renderApp('/recipes/1')
+
+    const prep = await minutesBox('Prep minutes')
+    expect(prep).toHaveValue('125')
+    expect(within(screen.getByRole('heading', { name: 'Prep' }).parentElement!).getByRole('textbox', { name: 'Prep minutes' })).toBe(prep)
+    const cook = screen.getByRole('textbox', { name: 'Cook minutes' })
+    expect(within(screen.getByRole('heading', { name: 'Cook' }).parentElement!).getByRole('textbox', { name: 'Cook minutes' })).toBe(cook)
+    expect(cook).toHaveValue('')
+    for (const box of [prep, cook]) {
+      expect(box).toHaveAttribute('placeholder', 'min')
+      expect(box).toHaveAttribute('maxlength', '5')
+      expect(box).toHaveAttribute('inputmode', 'numeric')
+      expect(box).toHaveClass('border', 'border-border')
+    }
+    expect(screen.queryByText(/\bhr\b/)).not.toBeInTheDocument()
+  })
+
+  it('sends a typed number as a number, and the saved value stays in the box', async () => {
+    setSessionFlag()
+    const log = mockRecipes([{ id: 1, title: 'Bread' }])
+    renderApp('/recipes/1')
+    const box = await minutesBox('Prep minutes')
+    await userEvent.type(box, '45')
+    await userEvent.tab()
+
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    expect(log.patches[0].body).toEqual({ recipe: { prep_minutes: 45 } })
+    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_minutes).toBe(45))
+    expect(box).toHaveValue('45')
+  })
+
+  it('sends null when the box is cleared', async () => {
+    setSessionFlag()
+    const log = mockRecipes([{ id: 1, title: 'Bread', cook_minutes: 30 }])
+    renderApp('/recipes/1')
+    const box = await minutesBox('Cook minutes')
+    await userEvent.clear(box)
+    await userEvent.tab()
+
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    expect(log.patches[0].body).toEqual({ recipe: { cook_minutes: null } })
+    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).cook_minutes).toBeNull())
+    expect(box).toHaveValue('')
+  })
+
+  it('sends nothing when the value is unchanged', async () => {
+    setSessionFlag()
+    const log = mockRecipes([{ id: 1, title: 'Bread', prep_minutes: 20 }])
+    renderApp('/recipes/1')
+    const box = await minutesBox('Prep minutes')
+    await userEvent.type(box, ' ')
+    await userEvent.tab()
+    await settle()
+
+    expect(log.patches).toEqual([])
+    expect(box).toHaveValue('20')
+  })
+
+  it.each([
+    ['0', 0, 'Prep minutes must be greater than 0.'],
+    ['-1', '-1', 'Prep minutes must be greater than 0.'],
+    ['abc', 'abc', 'Prep minutes must be an integer.'],
+  ])('sends %s, shows the API message on that field and goes back to the saved value', async (typed, sent, message) => {
+    setSessionFlag()
+    const log = mockRecipes([{ id: 1, title: 'Bread', prep_minutes: 20 }])
+    renderApp('/recipes/1')
+    const box = await minutesBox('Prep minutes')
+    await userEvent.clear(box)
+    await userEvent.type(box, typed)
+    await userEvent.tab()
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(log.patches[0].body).toEqual({ recipe: { prep_minutes: sent } })
+    expect(box).toHaveValue('20')
+    expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_minutes).toBe(20)
+  })
+})

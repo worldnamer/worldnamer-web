@@ -3,7 +3,6 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
 import { getRecipe, type Recipe } from '@/api/recipes'
-import { formatMinutes } from '@/lib/duration'
 import { useRecipeSaver } from '@/lib/useRecipeSaver'
 import { cn } from '@/lib/utils'
 
@@ -39,15 +38,14 @@ function SelectedRecipe({ id }: { id: string }) {
   return <Card recipe={data} />
 }
 
-// An area of the card: a heading with a rule under it, and, for Prep and Cook, the time on the heading line, right-aligned ("0 min" when none is set).
-function Area({ title, minutes, children }: { title: string; minutes?: number | null; children: ReactNode }) {
+// An area of the card: a heading with a rule under it, and, for Prep and Cook, the minutes box on the heading line,
+// right-aligned.
+function Area({ title, headingExtra, children }: { title: string; headingExtra?: ReactNode; children: ReactNode }) {
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between border-b border-border pb-1">
         <h3 className="font-bold">{title}</h3>
-        {minutes !== undefined && (
-          <span className="text-sm text-muted-foreground">{formatMinutes(minutes ?? 0)}</span>
-        )}
+        {headingExtra}
       </div>
       <div className="pt-2">{children}</div>
     </div>
@@ -74,10 +72,56 @@ function Messages({ messages }: { messages: string[] | undefined }) {
 }
 
 type TextKey = 'title' | 'prep_instructions' | 'cook_instructions'
+type MinutesKey = 'prep_minutes' | 'cook_minutes'
+type DraftKey = TextKey | MinutesKey
 
 // The limits the API enforces, so a box stops typing at them. The API still checks every value.
 const MAX_TITLE = 100
 const MAX_INSTRUCTIONS = 10_000
+const MAX_MINUTES_DIGITS = 5
+
+// The text of a minutes box for a saved value: the number, or empty for none.
+function minutesText(minutes: number | null): string {
+  return minutes === null ? '' : String(minutes)
+}
+
+// What to send for a minutes box: empty means none (null), digits are a number, and anything else goes as typed, so the
+// API stays the one to reject it. A number-type box is avoided because the browser turns garbage into "", which would
+// silently clear a time.
+function minutesValue(text: string): number | string | null {
+  if (text === '') return null
+  return /^\d+$/.test(text) ? Number(text) : text
+}
+
+function MinutesBox({
+  label,
+  value,
+  onChange,
+  onBlur,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onBlur: () => void
+}) {
+  return (
+    <span className="flex items-baseline gap-1 text-sm text-muted-foreground">
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label={label}
+        placeholder="min"
+        autoComplete="off"
+        maxLength={MAX_MINUTES_DIGITS}
+        className={cn(boxClass, 'w-16 text-right')}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+      />
+      min
+    </span>
+  )
+}
 
 // The card. Each box shows its draft, the text being typed, or else the saved value from the cache; only a box that is
 // being edited has a draft, so every other box follows the cache the moment a save lands. A box saves on blur: nothing is
@@ -86,10 +130,10 @@ const MAX_INSTRUCTIONS = 10_000
 // last saved.
 function Card({ recipe }: { recipe: Recipe }) {
   const { save, errors, clearError } = useRecipeSaver(String(recipe.id))
-  const [drafts, setDrafts] = useState<Partial<Record<TextKey, string>>>({})
-  const draftsRef = useRef<Partial<Record<TextKey, string>>>({}) // what a save's callback must see, not a render's copy
+  const [drafts, setDrafts] = useState<Partial<Record<DraftKey, string>>>({})
+  const draftsRef = useRef<Partial<Record<DraftKey, string>>>({}) // what a save's callback must see, not a render's copy
 
-  function setDraft(key: TextKey, value: string | undefined) {
+  function setDraft(key: DraftKey, value: string | undefined) {
     const next = { ...draftsRef.current }
     if (value === undefined) delete next[key]
     else next[key] = value
@@ -97,9 +141,13 @@ function Card({ recipe }: { recipe: Recipe }) {
     setDrafts(next)
   }
 
-  function textBox(key: TextKey) {
+  function savedText(key: DraftKey): string {
+    return key === 'prep_minutes' || key === 'cook_minutes' ? minutesText(recipe[key]) : recipe[key]
+  }
+
+  function textBox(key: DraftKey) {
     return {
-      value: drafts[key] ?? recipe[key],
+      value: drafts[key] ?? savedText(key),
       onChange: (value: string) => {
         clearError(key, null)
         setDraft(key, value)
@@ -108,13 +156,13 @@ function Card({ recipe }: { recipe: Recipe }) {
         const draft = draftsRef.current[key]
         if (draft === undefined) return
         const text = draft.trim()
-        if (text === recipe[key] || (key === 'title' && text === '')) {
+        if (text === savedText(key) || (key === 'title' && text === '')) {
           setDraft(key, undefined)
           return
         }
         save({
           key,
-          patch: { [key]: text },
+          patch: { [key]: key === 'prep_minutes' || key === 'cook_minutes' ? minutesValue(text) : text },
           onSaved: () => {
             if (draftsRef.current[key] === draft) setDraft(key, undefined)
           },
@@ -127,6 +175,8 @@ function Card({ recipe }: { recipe: Recipe }) {
   const title = textBox('title')
   const prep = textBox('prep_instructions')
   const cook = textBox('cook_instructions')
+  const prepMinutes = textBox('prep_minutes')
+  const cookMinutes = textBox('cook_minutes')
 
   return (
     <section aria-label="Recipe card">
@@ -156,7 +206,11 @@ function Card({ recipe }: { recipe: Recipe }) {
           </ul>
         )}
       </Area>
-      <Area title="Prep" minutes={recipe.prep_minutes}>
+      <Area
+        title="Prep"
+        headingExtra={<MinutesBox label="Prep minutes" value={prepMinutes.value} onChange={prepMinutes.onChange} onBlur={prepMinutes.onBlur} />}
+      >
+        <Messages messages={errors.prep_minutes} />
         <textarea
           aria-label="Prep instructions"
           placeholder="Prep instructions"
@@ -169,7 +223,11 @@ function Card({ recipe }: { recipe: Recipe }) {
         />
         <Messages messages={errors.prep_instructions} />
       </Area>
-      <Area title="Cook" minutes={recipe.cook_minutes}>
+      <Area
+        title="Cook"
+        headingExtra={<MinutesBox label="Cook minutes" value={cookMinutes.value} onChange={cookMinutes.onChange} onBlur={cookMinutes.onBlur} />}
+      >
+        <Messages messages={errors.cook_minutes} />
         <textarea
           aria-label="Cooking instructions"
           placeholder="Cooking instructions"
