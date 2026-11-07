@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
-import { getRecipe, type Recipe } from '@/api/recipes'
+import { getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
 import { useRecipeSaver } from '@/lib/useRecipeSaver'
 import { cn } from '@/lib/utils'
 
@@ -52,10 +52,6 @@ function Area({ title, headingExtra, children }: { title: string; headingExtra?:
   )
 }
 
-function Empty({ children }: { children: string }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>
-}
-
 // A visible box with a placeholder, so an empty field reads as a place to type.
 const boxClass =
   'w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
@@ -79,6 +75,22 @@ type DraftKey = TextKey | MinutesKey
 const MAX_TITLE = 100
 const MAX_INSTRUCTIONS = 10_000
 const MAX_MINUTES_DIGITS = 5
+const MAX_INGREDIENT_NAME = 100
+const MAX_INGREDIENT_AMOUNT = 50
+
+// An ingredient row being edited. The key belongs to the row on screen, not to its place in the list, so a row keeps its
+// input (and the focus in it) when another row is dropped above it. Saved rows are keyed s0, s1... and rows typed in
+// here n1, n2...
+type Row = { key: string; name: string; amount: string }
+
+const isBlank = (row: Row) => row.name.trim() === '' && row.amount.trim() === ''
+
+// What is sent for rows: blank rows left out, text stripped.
+function payloadOf(rows: Row[]): RecipeIngredient[] {
+  return rows.filter((row) => !isBlank(row)).map((row) => ({ name: row.name.trim(), amount: row.amount.trim() }))
+}
+
+const sameIngredients = (a: RecipeIngredient[], b: RecipeIngredient[]) => JSON.stringify(a) === JSON.stringify(b)
 
 // The text of a minutes box for a saved value: the number, or empty for none.
 function minutesText(minutes: number | null): string {
@@ -175,6 +187,70 @@ function Card({ recipe }: { recipe: Recipe }) {
   const title = textBox('title')
   const prep = textBox('prep_instructions')
   const cook = textBox('cook_instructions')
+  // Ingredient rows. A draft, when there is one, is the whole list of rows being edited. After a save the saved rows keep
+  // the keys the draft rows had (savedKeys), so a row does not remount, and lose focus, when the cache takes over again.
+  const [ingredientDraft, setIngredientDraft] = useState<Row[] | undefined>(undefined)
+  const ingredientRef = useRef<Row[] | undefined>(undefined)
+  const [savedKeys, setSavedKeys] = useState<string[] | null>(null)
+  const [nextNew, setNextNew] = useState(1)
+
+  function setIngredients(rows: Row[] | undefined) {
+    ingredientRef.current = rows
+    setIngredientDraft(rows)
+  }
+
+  const savedRows: Row[] = recipe.ingredients.map((ingredient, index) => ({
+    key: savedKeys === null ? `s${index}` : (savedKeys[index] ?? `f${index}`),
+    name: ingredient.name,
+    amount: ingredient.amount,
+  }))
+  const rows = ingredientDraft ?? savedRows
+  // There is always a blank row to type into: the last row, if it is blank, or else a new one with a key not yet used.
+  const spareKey = rows.length > 0 && isBlank(rows[rows.length - 1]) ? null : `n${nextNew}`
+  const shownRows: Row[] = spareKey === null ? rows : [...rows, { key: spareKey, name: '', amount: '' }]
+
+  function editRow(key: string, field: 'name' | 'amount', value: string) {
+    clearError('ingredients', null)
+    if (key === spareKey) {
+      setNextNew(nextNew + 1)
+      setIngredients([...rows, { key, name: '', amount: '', [field]: value }])
+    } else {
+      setIngredients(rows.map((row) => (row.key === key ? { ...row, [field]: value } : row)))
+    }
+  }
+
+  // Leaving a row's input drops the rows that are blank and saves the list if it differs from the saved one. Moving from
+  // one input of a row to the other is not leaving the row, so a row being emptied is not dropped under the cursor.
+  function leaveRow(event: FocusEvent<HTMLInputElement>) {
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget.closest('li')?.contains(next)) return
+    const draft = ingredientRef.current
+    if (draft === undefined) return
+    const kept = draft.filter((row) => !isBlank(row))
+    const payload = payloadOf(draft)
+    if (sameIngredients(payload, recipe.ingredients)) {
+      setSavedKeys(kept.map((row) => row.key))
+      setIngredients(undefined)
+      return
+    }
+    setIngredients(kept)
+    save({
+      key: 'ingredients',
+      patch: { ingredients: payload },
+      onSaved: () => {
+        const current = ingredientRef.current
+        if (current !== undefined && sameIngredients(payloadOf(current), payload)) {
+          setSavedKeys(current.filter((row) => !isBlank(row)).map((row) => row.key))
+          setIngredients(undefined)
+        }
+      },
+      onRejected: () => {
+        setSavedKeys(null)
+        setIngredients(undefined)
+      },
+    })
+  }
+
   const prepMinutes = textBox('prep_minutes')
   const cookMinutes = textBox('cook_minutes')
 
@@ -196,15 +272,35 @@ function Card({ recipe }: { recipe: Recipe }) {
       <Messages messages={errors.title} />
       <Messages messages={errors.card} />
       <Area title="Ingredients">
-        {recipe.ingredients.length === 0 ? (
-          <Empty>No ingredients.</Empty>
-        ) : (
-          <ul className="list-disc pl-5">
-            {recipe.ingredients.map((ingredient, index) => (
-              <li key={index}>{ingredient.amount === '' ? ingredient.name : `${ingredient.amount} ${ingredient.name}`}</li>
-            ))}
-          </ul>
-        )}
+        <Messages messages={errors.ingredients} />
+        <ul>
+          {shownRows.map((row, index) => (
+            <li key={row.key} className="flex gap-2 pb-1">
+              <input
+                type="text"
+                aria-label={`Ingredient ${index + 1} amount`}
+                placeholder="Amount"
+                autoComplete="off"
+                maxLength={MAX_INGREDIENT_AMOUNT}
+                className={cn(boxClass, 'w-1/3')}
+                value={row.amount}
+                onChange={(e) => editRow(row.key, 'amount', e.target.value)}
+                onBlur={leaveRow}
+              />
+              <input
+                type="text"
+                aria-label={`Ingredient ${index + 1} name`}
+                placeholder="Ingredient"
+                autoComplete="off"
+                maxLength={MAX_INGREDIENT_NAME}
+                className={cn(boxClass, 'flex-1')}
+                value={row.name}
+                onChange={(e) => editRow(row.key, 'name', e.target.value)}
+                onBlur={leaveRow}
+              />
+            </li>
+          ))}
+        </ul>
       </Area>
       <Area
         title="Prep"

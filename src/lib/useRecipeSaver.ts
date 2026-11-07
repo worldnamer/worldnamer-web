@@ -91,6 +91,9 @@ export function useRecipeSaver(id: string) {
         const own = error.fields?.[request.key]
         if (own && own.length > 0) {
           setError(request.key, own)
+        } else if (request.key === 'ingredients' && error.fields) {
+          const rows = ingredientMessages(error.fields)
+          setError('ingredients', rows.length > 0 ? rows : [SAVE_FAILED_MESSAGE])
         } else {
           setError('card', [error.serverMessage ?? SAVE_FAILED_MESSAGE])
         }
@@ -111,4 +114,18 @@ export function useRecipeSaver(id: string) {
   )
 
   return { save, errors, clearError: setError }
+}
+
+// "Ingredient 3: Name is too long (maximum is 100 characters)." for each ingredients.<i>.<field> message, in row order,
+// after the list-level message for ingredients itself. i is the zero-based place in the list that was sent.
+export function ingredientMessages(fields: Record<string, string[]>): string[] {
+  const rows: { index: number; message: string }[] = []
+  const listLevel: string[] = []
+  for (const [key, messages] of Object.entries(fields)) {
+    const match = /^ingredients\.(\d+)\.(?:name|amount)$/.exec(key)
+    if (match) for (const message of messages) rows.push({ index: Number(match[1]), message })
+    else if (key === 'ingredients') listLevel.push(...messages)
+  }
+  rows.sort((a, b) => a.index - b.index)
+  return [...listLevel, ...rows.map((r) => `Ingredient ${r.index + 1}: ${r.message}`)]
 }

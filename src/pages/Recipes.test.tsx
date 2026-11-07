@@ -138,7 +138,11 @@ describe('the recipe card', () => {
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByRole('heading', { name: 'Bread' })).toBeInTheDocument()
     const items = within(card).getAllByRole('listitem')
-    expect(items.map((i) => i.textContent)).toEqual(['500 g flour', 'salt'])
+    expect(items.map((i) => within(i).getAllByRole('textbox').map((box) => (box as HTMLInputElement).value))).toEqual([
+      ['500 g', 'flour'],
+      ['', 'salt'],
+      ['', ''],
+    ])
     expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('Mix.\nKnead.')
     const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
     expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
@@ -146,7 +150,7 @@ describe('the recipe card', () => {
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
 
-  it('always shows the three areas, with an empty instruction box in Prep and Cook', async () => {
+  it('always shows the three areas, with a blank ingredient row and empty instruction boxes', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water' }]))
     renderApp('/recipes/2')
@@ -155,7 +159,9 @@ describe('the recipe card', () => {
     for (const name of ['Ingredients', 'Prep', 'Cook']) {
       expect(within(card).getByRole('heading', { name })).toBeInTheDocument()
     }
-    expect(within(card).getByText('No ingredients.')).toHaveClass('text-muted-foreground')
+    expect(within(card).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(card).getByPlaceholderText('Amount')).toHaveValue('')
+    expect(within(card).getByPlaceholderText('Ingredient')).toHaveValue('')
     for (const [name, placeholder] of [
       ['Prep instructions', 'Prep instructions'],
       ['Cooking instructions', 'Cooking instructions'],
@@ -178,7 +184,7 @@ describe('the recipe card', () => {
     expect(within(card).getByRole('textbox', { name: 'Prep minutes' })).toHaveValue('125')
     expect(within(card).getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('Simmer.')
     expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('')
-    expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(1)
   })
 
   it('shows an empty minutes box on the heading line when a time is null, and none on Ingredients', async () => {
@@ -295,7 +301,7 @@ describe('adding a recipe', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByRole('heading', { name: 'New recipe' })).toBeInTheDocument()
-    expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(1)
     expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('')
     expect(within(card).getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('')
     const rolodex = screen.getByRole('region', { name: 'Recipes' })
