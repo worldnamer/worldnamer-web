@@ -130,7 +130,7 @@ describe('the recipe card', () => {
     prep_minutes: 20,
   }
 
-  it('shows the title, ingredients, instructions and minutes, hiding what is empty', async () => {
+  it('shows the title, ingredients, instructions and the time beside each heading', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([bread]))
     renderApp('/recipes/1')
@@ -142,21 +142,49 @@ describe('the recipe card', () => {
     const prep = within(card).getByText(/Mix\./)
     expect(prep.textContent).toBe('Mix.\nKnead.')
     expect(prep).toHaveClass('whitespace-pre-line')
-    expect(within(card).getByText('20 minutes')).toBeInTheDocument()
-    expect(within(card).getByRole('heading', { name: 'Prep' })).toBeInTheDocument()
-    expect(within(card).queryByRole('heading', { name: 'Cook' })).not.toBeInTheDocument()
+    const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
+    expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
+    expect(within(prepLine).getByText('20 min')).toBeInTheDocument()
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
 
-  it('hides the ingredients section when there are none', async () => {
+  it('always shows the three areas, with a muted line for each that is empty', async () => {
     setSessionFlag()
-    server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water', cook_minutes: 5 }]))
+    server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water' }]))
     renderApp('/recipes/2')
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
-    expect(within(card).queryByRole('heading', { name: 'Ingredients' })).not.toBeInTheDocument()
-    expect(within(card).getByText('5 minutes')).toBeInTheDocument()
-    expect(within(card).queryByRole('heading', { name: 'Prep' })).not.toBeInTheDocument()
+    for (const name of ['Ingredients', 'Prep', 'Cook']) {
+      expect(within(card).getByRole('heading', { name })).toBeInTheDocument()
+    }
+    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
+      expect(within(card).getByText(line)).toHaveClass('text-muted-foreground')
+    }
+  })
+
+  it('shows what exists when an area has only a time or only text', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...recipesHandlers([{ id: 2, title: 'Stew', prep_minutes: 125, cook_instructions: 'Simmer.' }]),
+    )
+    renderApp('/recipes/2')
+
+    const card = await screen.findByRole('region', { name: 'Recipe card' })
+    expect(within(card).getByText('2 hr 5 min')).toBeInTheDocument()
+    expect(within(card).getByText('Simmer.')).toBeInTheDocument()
+    expect(within(card).queryByText('No prep.')).not.toBeInTheDocument()
+    expect(within(card).queryByText('No cooking.')).not.toBeInTheDocument()
+    expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
+  })
+
+  it('shows no time on the heading line when it is null', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Salad', cook_instructions: 'Toss.' }]))
+    renderApp('/recipes/2')
+
+    const cookLine = (await screen.findByRole('heading', { name: 'Cook' })).parentElement!
+    expect(cookLine.children).toHaveLength(1)
   })
 
   it('renders markup in recipe text as text', async () => {

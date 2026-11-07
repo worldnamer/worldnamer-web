@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
 import { getRecipe, type Recipe } from '@/api/recipes'
+import { formatMinutes } from '@/lib/duration'
 
 // The recipe named in the address (/recipes/:id). With no id it is a prompt, shown only from lg since below that the
 // rolodex is all there is. A 404 (not the user's recipe, or gone) goes back to /recipes without a message. Every
@@ -28,38 +30,52 @@ function SelectedRecipe({ id }: { id: string }) {
   return <Card recipe={data} />
 }
 
-function Minutes({ minutes }: { minutes: number | null }) {
-  return minutes === null ? null : <p className="text-sm text-muted-foreground">{minutes} minutes</p>
+// An area of the card: a heading with a rule under it, and the time (when there is one) on the heading line, right-aligned.
+function Area({ title, minutes, children }: { title: string; minutes?: number | null; children: ReactNode }) {
+  return (
+    <div className="py-2">
+      <div className="flex items-baseline justify-between border-b border-border pb-1">
+        <h3 className="font-bold">{title}</h3>
+        {minutes != null && <span className="text-sm text-muted-foreground">{formatMinutes(minutes)}</span>}
+      </div>
+      <div className="pt-2">{children}</div>
+    </div>
+  )
+}
+
+function Empty({ children }: { children: string }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>
 }
 
 function Card({ recipe }: { recipe: Recipe }) {
   return (
     <section aria-label="Recipe card">
       <h2 className="border-b border-border pb-2 font-display text-2xl font-bold">{recipe.title}</h2>
-      {recipe.ingredients.length > 0 && (
-        <div className="py-2">
-          <h3 className="font-bold">Ingredients</h3>
+      <Area title="Ingredients">
+        {recipe.ingredients.length === 0 ? (
+          <Empty>No ingredients.</Empty>
+        ) : (
           <ul className="list-disc pl-5">
             {recipe.ingredients.map((ingredient, index) => (
               <li key={index}>{ingredient.amount === '' ? ingredient.name : `${ingredient.amount} ${ingredient.name}`}</li>
             ))}
           </ul>
-        </div>
-      )}
-      {(recipe.prep_instructions !== '' || recipe.prep_minutes !== null) && (
-        <div className="py-2">
-          <h3 className="font-bold">Prep</h3>
-          <Minutes minutes={recipe.prep_minutes} />
-          {recipe.prep_instructions !== '' && <p className="whitespace-pre-line">{recipe.prep_instructions}</p>}
-        </div>
-      )}
-      {(recipe.cook_instructions !== '' || recipe.cook_minutes !== null) && (
-        <div className="py-2">
-          <h3 className="font-bold">Cook</h3>
-          <Minutes minutes={recipe.cook_minutes} />
-          {recipe.cook_instructions !== '' && <p className="whitespace-pre-line">{recipe.cook_instructions}</p>}
-        </div>
-      )}
+        )}
+      </Area>
+      <Area title="Prep" minutes={recipe.prep_minutes}>
+        {recipe.prep_instructions !== '' ? (
+          <p className="whitespace-pre-line">{recipe.prep_instructions}</p>
+        ) : (
+          recipe.prep_minutes === null && <Empty>No prep.</Empty>
+        )}
+      </Area>
+      <Area title="Cook" minutes={recipe.cook_minutes}>
+        {recipe.cook_instructions !== '' ? (
+          <p className="whitespace-pre-line">{recipe.cook_instructions}</p>
+        ) : (
+          recipe.cook_minutes === null && <Empty>No cooking.</Empty>
+        )}
+      </Area>
     </section>
   )
 }
