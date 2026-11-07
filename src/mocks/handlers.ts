@@ -450,5 +450,103 @@ export function recipesHandlers(initial: MockRecipe[] = []) {
     return HttpResponse.json({ recipe }, { status: 201 })
   })
 
-  return [list, show, create]
+  // PATCH: a partial update of the shared array, validated like the API (all or nothing, a 422 with `fields` keyed
+  // title, prep_instructions, prep_minutes, cook_instructions, cook_minutes, ingredients and ingredients.<i>.name|amount).
+  // Text is stripped and lengths are counted by code points. A bad body is a 400, an unknown id a 404.
+  const update = http.patch(`${API_BASE}/recipes/:id`, async ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = recipes.find((r) => String(r.id) === params.id)
+    if (!found) return HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+
+    const badRequest = () => HttpResponse.json(errorBody('bad_request', 'Bad request.'), { status: 400 })
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return badRequest()
+    }
+    const sent = (body as { recipe?: unknown } | null)?.recipe
+    if (typeof sent !== 'object' || sent === null || Array.isArray(sent) || Object.keys(sent).length === 0) {
+      return badRequest()
+    }
+    const patch = sent as Record<string, unknown>
+    if (
+      'ingredients' in patch &&
+      !(Array.isArray(patch.ingredients) && patch.ingredients.every((i) => typeof i === 'object' && i !== null))
+    ) {
+      return badRequest()
+    }
+
+    const errors: Record<string, string[]> = {}
+    const fail = (key: string, message: string) => (errors[key] ??= []).push(message)
+    const text = (value: unknown) => (typeof value === 'string' ? value.trim() : value == null ? '' : String(value))
+    const length = (value: string) => [...value].length
+    const changes: MockRecipe = { id: found.id, title: found.title }
+
+    if ('title' in patch) {
+      const title = text(patch.title)
+      if (title === '') fail('title', "Title can't be blank.")
+      else if (length(title) > 100) fail('title', 'Title is too long (maximum is 100 characters).')
+      else changes.title = title
+    }
+    for (const [key, label] of [
+      ['prep_instructions', 'Prep instructions'],
+      ['cook_instructions', 'Cook instructions'],
+    ] as const) {
+      if (!(key in patch)) continue
+      const value = text(patch[key])
+      if (length(value) > 10_000) fail(key, `${label} is too long (maximum is 10000 characters).`)
+      else changes[key] = value
+    }
+    for (const [key, label] of [
+      ['prep_minutes', 'Prep minutes'],
+      ['cook_minutes', 'Cook minutes'],
+    ] as const) {
+      if (!(key in patch)) continue
+      const value = patch[key]
+      if (value === null || value === '') {
+        changes[key] = null
+      } else if (typeof value === 'number' ? !Number.isInteger(value) : !/^-?\d+$/.test(String(value))) {
+        fail(key, `${label} must be an integer.`)
+      } else if (Number(value) < 1) {
+        fail(key, `${label} must be greater than 0.`)
+      } else if (Number(value) > 99_999) {
+        fail(key, `${label} must be less than or equal to 99999.`)
+      } else {
+        changes[key] = Number(value)
+      }
+    }
+    if ('ingredients' in patch) {
+      const rows = (patch.ingredients as Record<string, unknown>[]).map((row) => ({
+        name: text(row.name),
+        amount: text(row.amount),
+      }))
+      if (rows.length > 100) fail('ingredients', 'Ingredients has too many rows (maximum is 100).')
+      rows.forEach((row, index) => {
+        if (row.name === '') fail(`ingredients.${index}.name`, "Name can't be blank.")
+        else if (length(row.name) > 100) fail(`ingredients.${index}.name`, 'Name is too long (maximum is 100 characters).')
+        if (length(row.amount) > 50) fail(`ingredients.${index}.amount`, 'Amount is too long (maximum is 50 characters).')
+      })
+      changes.ingredients = rows
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const message = Object.values(errors).flat().join(' ')
+      return HttpResponse.json({ error: { code: 'validation_failed', message, fields: errors } }, { status: 422 })
+    }
+    Object.assign(found, changes)
+    return HttpResponse.json({
+      recipe: {
+        id: found.id,
+        title: found.title,
+        ingredients: (found.ingredients ?? []).map((i) => ({ name: i.name, amount: i.amount })),
+        prep_instructions: found.prep_instructions ?? '',
+        prep_minutes: found.prep_minutes ?? null,
+        cook_instructions: found.cook_instructions ?? '',
+        cook_minutes: found.cook_minutes ?? null,
+      },
+    })
+  })
+
+  return [list, show, create, update]
 }

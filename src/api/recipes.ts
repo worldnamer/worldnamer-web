@@ -43,3 +43,28 @@ export async function createRecipe(): Promise<Recipe> {
   const body = (await response.json()) as { recipe: Recipe }
   return body.recipe
 }
+
+// The fields PATCH can change. Send only the one that changed: the rest stay as they are on the server. ingredients is
+// the whole ordered list and replaces the recipe's. A minutes value is a whole number, null for none, or the raw text
+// when it is not a number, so the API stays the one to reject it.
+export type RecipePatch = Partial<{
+  title: string
+  ingredients: RecipeIngredient[]
+  prep_instructions: string
+  prep_minutes: number | string | null
+  cook_instructions: string
+  cook_minutes: number | string | null
+}>
+
+// PATCH /recipes/:id. Resolves the recipe as saved. Rejects with ApiError otherwise: a 422 carries `fields` (field key ->
+// messages), a 400 means the body was malformed, and a 404 that the recipe is not among the user's or is gone.
+export async function updateRecipe(id: string, patch: RecipePatch): Promise<Recipe> {
+  const response = await apiFetch(`/recipes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe: patch }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { recipe: Recipe }
+  return body.recipe
+}

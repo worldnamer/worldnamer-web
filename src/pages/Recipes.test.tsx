@@ -139,16 +139,14 @@ describe('the recipe card', () => {
     expect(within(card).getByRole('heading', { name: 'Bread' })).toBeInTheDocument()
     const items = within(card).getAllByRole('listitem')
     expect(items.map((i) => i.textContent)).toEqual(['500 g flour', 'salt'])
-    const prep = within(card).getByText(/Mix\./)
-    expect(prep.textContent).toBe('Mix.\nKnead.')
-    expect(prep).toHaveClass('whitespace-pre-line')
+    expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('Mix.\nKnead.')
     const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
     expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
     expect(within(prepLine).getByText('20 min')).toBeInTheDocument()
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
 
-  it('always shows the three areas, with a muted line for each that is empty', async () => {
+  it('always shows the three areas, with an empty instruction box in Prep and Cook', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water' }]))
     renderApp('/recipes/2')
@@ -157,8 +155,14 @@ describe('the recipe card', () => {
     for (const name of ['Ingredients', 'Prep', 'Cook']) {
       expect(within(card).getByRole('heading', { name })).toBeInTheDocument()
     }
-    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
-      expect(within(card).getByText(line)).toHaveClass('text-muted-foreground')
+    expect(within(card).getByText('No ingredients.')).toHaveClass('text-muted-foreground')
+    for (const [name, placeholder] of [
+      ['Prep instructions', 'Prep instructions'],
+      ['Cooking instructions', 'Cooking instructions'],
+    ]) {
+      const box = within(card).getByRole('textbox', { name })
+      expect(box).toHaveValue('')
+      expect(box).toHaveAttribute('placeholder', placeholder)
     }
   })
 
@@ -172,9 +176,8 @@ describe('the recipe card', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByText('2 hr 5 min')).toBeInTheDocument()
-    expect(within(card).getByText('Simmer.')).toBeInTheDocument()
-    expect(within(card).queryByText('No prep.')).not.toBeInTheDocument()
-    expect(within(card).queryByText('No cooking.')).not.toBeInTheDocument()
+    expect(within(card).getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('Simmer.')
+    expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('')
     expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
   })
 
@@ -199,7 +202,7 @@ describe('the recipe card', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(card.querySelector('img, b')).toBeNull()
-    expect(within(card).getByText('<b>bold</b> **x**')).toBeInTheDocument()
+    expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('<b>bold</b> **x**')
   })
 
   it('redirects to /recipes on a 404, showing the rolodex and no card, and asks only once', async () => {
@@ -242,7 +245,7 @@ describe('the recipe card', () => {
     await screen.findByRole('heading', { name: 'Bread' })
     await userEvent.click(screen.getByRole('link', { name: 'Chili' }))
     expect(await screen.findByRole('heading', { name: 'Chili' })).toBeInTheDocument()
-    expect(screen.getByText('Simmer.')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('Simmer.')
   })
 })
 
@@ -292,9 +295,9 @@ describe('adding a recipe', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByRole('heading', { name: 'New recipe' })).toBeInTheDocument()
-    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
-      expect(within(card).getByText(line)).toBeInTheDocument()
-    }
+    expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
+    expect(within(card).getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('')
+    expect(within(card).getByRole('textbox', { name: 'Cooking instructions' })).toHaveValue('')
     const rolodex = screen.getByRole('region', { name: 'Recipes' })
     await waitFor(() =>
       expect(within(rolodex).getAllByRole('link').map((l) => l.textContent)).toEqual([
