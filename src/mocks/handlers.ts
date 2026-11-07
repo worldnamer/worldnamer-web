@@ -394,9 +394,18 @@ export function googleCalendarHandlers(status: MockConnectionStatus = 'not_conne
 }
 
 // The recipes. recipesHandlers(initial) keeps one in-memory list that its handlers share. Like the API, the list answers
-// only id and title, ordered by title without regard to case and then by id. Opt-in like the others:
-// server.use(...recipesHandlers([{ id: 1, title: 'Bread' }])).
-export type MockRecipe = { id: number; title: string }
+// only id and title, ordered by title without regard to case and then by id; show answers the whole recipe, with the
+// fields left out here filled as the API does ("" and null), and the 404 a missing or someone else's recipe gets for any
+// id not in the list. Opt-in like the others: server.use(...recipesHandlers([{ id: 1, title: 'Bread' }])).
+export type MockRecipe = {
+  id: number
+  title: string
+  ingredients?: { name: string; amount: string }[]
+  prep_instructions?: string
+  prep_minutes?: number | null
+  cook_instructions?: string
+  cook_minutes?: number | null
+}
 
 export function recipesHandlers(initial: MockRecipe[] = []) {
   const recipes = initial.map((r) => ({ ...r }))
@@ -407,5 +416,22 @@ export function recipesHandlers(initial: MockRecipe[] = []) {
     return HttpResponse.json({ recipes: sorted.map((r) => ({ id: r.id, title: r.title })) })
   })
 
-  return [list]
+  const show = http.get(`${API_BASE}/recipes/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const found = recipes.find((r) => String(r.id) === params.id)
+    if (!found) return HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+    return HttpResponse.json({
+      recipe: {
+        id: found.id,
+        title: found.title,
+        ingredients: (found.ingredients ?? []).map((i) => ({ name: i.name, amount: i.amount })),
+        prep_instructions: found.prep_instructions ?? '',
+        prep_minutes: found.prep_minutes ?? null,
+        cook_instructions: found.cook_instructions ?? '',
+        cook_minutes: found.cook_minutes ?? null,
+      },
+    })
+  })
+
+  return [list, show]
 }

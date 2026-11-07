@@ -11,3 +11,26 @@ export async function listRecipes(): Promise<RecipeSummary[]> {
   const body = (await response.json()) as { recipes: RecipeSummary[] }
   return body.recipes
 }
+
+export type RecipeIngredient = { name: string; amount: string }
+
+// A whole recipe. amount and both instruction fields are always strings (possibly ""); the minutes are a whole number
+// or null when not given.
+export type Recipe = {
+  id: number
+  title: string
+  ingredients: RecipeIngredient[]
+  prep_instructions: string
+  prep_minutes: number | null
+  cook_instructions: string
+  cook_minutes: number | null
+}
+
+// GET /recipes/:id. Rejects with ApiError otherwise; a 404 means there is no such recipe among the user's (missing,
+// not a number, or someone else's: the API does not say which).
+export async function getRecipe(id: string): Promise<Recipe> {
+  const response = await apiFetch(`/recipes/${encodeURIComponent(id)}`)
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { recipe: Recipe }
+  return body.recipe
+}

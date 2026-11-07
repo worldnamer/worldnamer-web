@@ -106,4 +106,110 @@ describe('the Recipes page', () => {
     expect(screen.queryByRole('heading', { name: 'Page not found' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Recipes' })).not.toBeInTheDocument()
   })
+
+  it('shows the prompt, hidden below lg, when no recipe is selected', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers(recipes))
+    renderApp('/recipes')
+
+    const prompt = await screen.findByText('Pick a recipe or add one')
+    expect(prompt).toHaveClass('hidden', 'lg:block')
+    expect(screen.queryByRole('region', { name: 'Recipe card' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the recipe card', () => {
+  const bread = {
+    id: 1,
+    title: 'Bread',
+    ingredients: [
+      { name: 'flour', amount: '500 g' },
+      { name: 'salt', amount: '' },
+    ],
+    prep_instructions: 'Mix.\nKnead.',
+    prep_minutes: 20,
+  }
+
+  it('shows the title, ingredients, instructions and minutes, hiding what is empty', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers([bread]))
+    renderApp('/recipes/1')
+
+    const card = await screen.findByRole('region', { name: 'Recipe card' })
+    expect(within(card).getByRole('heading', { name: 'Bread' })).toBeInTheDocument()
+    const items = within(card).getAllByRole('listitem')
+    expect(items.map((i) => i.textContent)).toEqual(['500 g flour', 'salt'])
+    const prep = within(card).getByText(/Mix\./)
+    expect(prep.textContent).toBe('Mix.\nKnead.')
+    expect(prep).toHaveClass('whitespace-pre-line')
+    expect(within(card).getByText('20 minutes')).toBeInTheDocument()
+    expect(within(card).getByRole('heading', { name: 'Prep' })).toBeInTheDocument()
+    expect(within(card).queryByRole('heading', { name: 'Cook' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
+  })
+
+  it('hides the ingredients section when there are none', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water', cook_minutes: 5 }]))
+    renderApp('/recipes/2')
+
+    const card = await screen.findByRole('region', { name: 'Recipe card' })
+    expect(within(card).queryByRole('heading', { name: 'Ingredients' })).not.toBeInTheDocument()
+    expect(within(card).getByText('5 minutes')).toBeInTheDocument()
+    expect(within(card).queryByRole('heading', { name: 'Prep' })).not.toBeInTheDocument()
+  })
+
+  it('renders markup in recipe text as text', async () => {
+    setSessionFlag()
+    const title = '<img src=x onerror=alert(1)>'
+    server.use(refreshHandler, ...recipesHandlers([{ id: 3, title, prep_instructions: '<b>bold</b> **x**' }]))
+    renderApp('/recipes/3')
+
+    const card = await screen.findByRole('region', { name: 'Recipe card' })
+    expect(card.querySelector('img, b')).toBeNull()
+    expect(within(card).getByText('<b>bold</b> **x**')).toBeInTheDocument()
+  })
+
+  it('redirects to /recipes on a 404, showing the rolodex and no card, and asks only once', async () => {
+    setSessionFlag()
+    let asks = 0
+    server.use(
+      refreshHandler,
+      http.get(`${API_BASE}/recipes/9`, () => {
+        asks++
+        return HttpResponse.json({ error: { code: 'not_found', message: 'Not found.' } }, { status: 404 })
+      }),
+      ...recipesHandlers([bread]),
+    )
+    renderApp('/recipes/9')
+
+    expect(await screen.findByText('Pick a recipe or add one')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Bread' })).not.toHaveAttribute('aria-current')
+    expect(screen.queryByRole('region', { name: 'Recipe card' })).not.toBeInTheDocument()
+    expect(asks).toBe(1)
+  })
+
+  it('shows a failure line on another error', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      http.get(`${API_BASE}/recipes/1`, () => HttpResponse.json({}, { status: 500 })),
+      ...recipesHandlers([bread]),
+    )
+    renderApp('/recipes/1')
+
+    expect(await screen.findByText('Could not load the recipe.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Bread' })).toBeInTheDocument()
+  })
+
+  it('swaps the card when another title is picked', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers([bread, { id: 2, title: 'Chili', cook_instructions: 'Simmer.' }]))
+    renderApp('/recipes/1')
+
+    await screen.findByRole('heading', { name: 'Bread' })
+    await userEvent.click(screen.getByRole('link', { name: 'Chili' }))
+    expect(await screen.findByRole('heading', { name: 'Chili' })).toBeInTheDocument()
+    expect(screen.getByText('Simmer.')).toBeInTheDocument()
+  })
 })

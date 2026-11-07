@@ -1,9 +1,10 @@
 import { useSession } from '@/auth/useSession'
+import { RecipeCard } from '../components/RecipeCard'
 import { RecipeRolodex } from '../components/RecipeRolodex'
 import { NotFound } from './NotFound'
 
 // Same left alignment and gaps as LoggedInHome. The rolodex comes first in the DOM and, from lg, sits in the quarter
-// column on the right; the half-width column is where the recipe card goes.
+// column on the right; the recipe card is in the half-width column.
 export function Recipes() {
   const { pending, user } = useSession()
   if (pending) return null // the session is being restored: show neither view
@@ -13,7 +14,9 @@ export function Recipes() {
       <div className="w-full lg:order-last lg:w-1/4">
         <RecipeRolodex />
       </div>
-      <div className="w-full lg:w-1/2" />
+      <div className="w-full lg:w-1/2">
+        <RecipeCard />
+      </div>
     </section>
   )
 }
