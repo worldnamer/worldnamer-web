@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { PencilIcon } from 'lucide-react'
+import { PencilIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
 import { getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
 import { formatMinutes } from '@/lib/duration'
+import { Button } from '@/components/ui/button'
 import { useRecipeSaver } from '@/lib/useRecipeSaver'
 import { cn } from '@/lib/utils'
 
@@ -253,13 +254,21 @@ function Card({ recipe }: { recipe: Recipe }) {
   const [drafts, setDrafts] = useState<Partial<Record<DraftKey, string>>>({})
   const draftsRef = useRef<Partial<Record<DraftKey, string>>>({}) // what a save's callback must see, not a render's copy
   const [editing, setEditing] = useState<Partial<Record<DraftKey, boolean>>>({})
-  const triggers = useRef<Partial<Record<DraftKey, HTMLButtonElement | null>>>({})
-  // The field whose text gets focus back once its box has closed after Enter or Escape. Opening any box clears it.
-  const [refocus, setRefocus] = useState<DraftKey | null>(null)
+  // The buttons that show closed fields, by field key, 'row:<key>' for an ingredient row and 'plus' for the add button.
+  const triggers = useRef<Record<string, HTMLButtonElement | null>>({})
+  // Which of them gets focus back once its box has closed after Enter or Escape. Opening any box clears it.
+  const [refocus, setRefocus] = useState<string | null>(null)
+  // The ingredient row whose two boxes are open, and the row that is a new one still being added (it has no saved
+  // counterpart, and the + button is replaced by it).
+  const [openRow, setOpenRow] = useState<string | null>(null)
+  const [addingRow, setAddingRow] = useState<string | null>(null)
 
   useEffect(() => {
-    if (refocus !== null && !editing[refocus]) triggers.current[refocus]?.focus()
-  }, [refocus, editing])
+    if (refocus === null) return
+    const isRowTarget = refocus === 'plus' || refocus.startsWith('row:')
+    const closed = isRowTarget ? openRow === null : !editing[refocus as DraftKey]
+    if (closed) triggers.current[refocus]?.focus()
+  }, [refocus, editing, openRow])
 
   function setDraft(key: DraftKey, value: string | undefined) {
     const next = { ...draftsRef.current }
@@ -289,7 +298,7 @@ function Card({ recipe }: { recipe: Recipe }) {
   }
 
   // The text of a closed field is a button; the card remembers it so focus can go back to it.
-  function trigger(key: DraftKey) {
+  function trigger(key: string) {
     return (element: HTMLButtonElement | null) => {
       triggers.current[key] = element
     }
@@ -378,35 +387,62 @@ function Card({ recipe }: { recipe: Recipe }) {
     amount: ingredient.amount,
   }))
   const rows = ingredientDraft ?? savedRows
-  // There is always a blank row to type into: the last row, if it is blank, or else a new one with a key not yet used.
-  const spareKey = rows.length > 0 && isBlank(rows[rows.length - 1]) ? null : `n${nextNew}`
-  const shownRows: Row[] = spareKey === null ? rows : [...rows, { key: spareKey, name: '', amount: '' }]
+  // Rows that show: the ones with text, and the open one even while it is blank.
+  const shownRows = rows.filter((row) => row.key === openRow || !isBlank(row))
+
+  function openIngredient(key: string) {
+    setRefocus(null)
+    setIngredients(rows)
+    setOpenRow(key)
+  }
+
+  function addIngredient() {
+    setRefocus(null)
+    clearError('ingredients', null)
+    const key = `n${nextNew}`
+    setNextNew(nextNew + 1)
+    setIngredients([...rows, { key, name: '', amount: '' }])
+    setAddingRow(key)
+    setOpenRow(key)
+  }
 
   function editRow(key: string, field: 'name' | 'amount', value: string) {
     clearError('ingredients', null)
-    if (key === spareKey) {
-      setNextNew(nextNew + 1)
-      setIngredients([...rows, { key, name: '', amount: '', [field]: value }])
-    } else {
-      setIngredients(rows.map((row) => (row.key === key ? { ...row, [field]: value } : row)))
-    }
+    setIngredients(rows.map((row) => (row.key === key ? { ...row, [field]: value } : row)))
   }
 
-  // Leaving a row's input drops the rows that are blank and saves the list if it differs from the saved one. Moving from
-  // one input of a row to the other is not leaving the row, so a row being emptied is not dropped under the cursor.
-  function leaveRow(event: FocusEvent<HTMLInputElement>) {
-    const next = event.relatedTarget
-    if (next instanceof Node && event.currentTarget.closest('li')?.contains(next)) return
+  // Escape: the row goes back to what is saved for it (a new row is removed) and nothing is sent.
+  function cancelRow(key: string) {
+    const original = savedRows.find((row) => row.key === key)
+    const next = rows.flatMap((row) => (row.key !== key ? [row] : original ? [original] : []))
+    setIngredients(sameIngredients(payloadOf(next), recipe.ingredients) ? undefined : next)
+    setRefocus(addingRow === key ? 'plus' : `row:${key}`)
+    setOpenRow(null)
+  }
+
+  // Leaving a row drops the rows that are blank and saves the list if it differs from the saved one. Moving from one box
+  // of a row to the other is not leaving the row, so a row being emptied is not dropped under the cursor. The row closes
+  // once its save is accepted or rejected, so after a failed save it stays open with what was typed. viaEnter puts focus
+  // back on the + for a new row, or on the row's text.
+  function leaveRow(key: string, viaEnter: boolean) {
     const draft = ingredientRef.current
-    if (draft === undefined) return
+    const close = () => {
+      if (viaEnter) setRefocus(addingRow === key ? 'plus' : `row:${key}`)
+      setOpenRow((current) => (current === key ? null : current))
+    }
+    if (draft === undefined) {
+      close()
+      return
+    }
     const kept = draft.filter((row) => !isBlank(row))
     const payload = payloadOf(draft)
     if (sameIngredients(payload, recipe.ingredients)) {
       setSavedKeys(kept.map((row) => row.key))
       setIngredients(undefined)
+      close()
       return
     }
-    setIngredients(kept)
+    setIngredients(draft.filter((row) => row.key === key || !isBlank(row)))
     save({
       key: 'ingredients',
       patch: { ingredients: payload },
@@ -415,13 +451,32 @@ function Card({ recipe }: { recipe: Recipe }) {
         if (current !== undefined && sameIngredients(payloadOf(current), payload)) {
           setSavedKeys(current.filter((row) => !isBlank(row)).map((row) => row.key))
           setIngredients(undefined)
+          close()
         }
       },
       onRejected: () => {
         setSavedKeys(null)
         setIngredients(undefined)
+        close()
       },
     })
+  }
+
+  function onRowBlur(event: FocusEvent<HTMLInputElement>, key: string) {
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget.closest('li')?.contains(next)) return
+    leaveRow(key, false)
+  }
+
+  function onRowKeyDown(event: KeyboardEvent<HTMLInputElement>, key: string, field: 'amount' | 'name') {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelRow(key)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      if (field === 'amount') event.currentTarget.closest('li')?.querySelector<HTMLInputElement>('input[data-field="name"]')?.focus()
+      else leaveRow(key, true)
+    }
   }
 
   return (
@@ -452,33 +507,61 @@ function Card({ recipe }: { recipe: Recipe }) {
       <Messages messages={errors.card} />
       <Area title="Ingredients">
         <Messages messages={errors.ingredients} />
-        <ul>
-          {shownRows.map((row, index) => (
-            <li key={row.key} className="flex gap-2 pb-1">
-              <input
-                type="text"
-                aria-label={`Ingredient ${index + 1} amount`}
-                placeholder="Amount"
-                autoComplete="off"
-                maxLength={MAX_INGREDIENT_AMOUNT}
-                className={cn(boxClass, 'w-1/3')}
-                value={row.amount}
-                onChange={(e) => editRow(row.key, 'amount', e.target.value)}
-                onBlur={leaveRow}
-              />
-              <input
-                type="text"
-                aria-label={`Ingredient ${index + 1} name`}
-                placeholder="Ingredient"
-                autoComplete="off"
-                maxLength={MAX_INGREDIENT_NAME}
-                className={cn(boxClass, 'flex-1')}
-                value={row.name}
-                onChange={(e) => editRow(row.key, 'name', e.target.value)}
-                onBlur={leaveRow}
-              />
+        {shownRows.length === 0 && openRow === null && <p className="text-sm text-muted-foreground">No ingredients yet.</p>}
+        <ul className="grid gap-1">
+          {shownRows.map((row, index) =>
+            row.key === openRow ? (
+              <li key={row.key} className="flex gap-2">
+                <input
+                  ref={focusAndSelect}
+                  type="text"
+                  aria-label={`Ingredient ${index + 1} amount`}
+                  data-field="amount"
+                  placeholder="Amount"
+                  autoComplete="off"
+                  maxLength={MAX_INGREDIENT_AMOUNT}
+                  className={cn(boxClass, 'w-1/3')}
+                  value={row.amount}
+                  onChange={(e) => editRow(row.key, 'amount', e.target.value)}
+                  onBlur={(e) => onRowBlur(e, row.key)}
+                  onKeyDown={(e) => onRowKeyDown(e, row.key, 'amount')}
+                />
+                <input
+                  type="text"
+                  aria-label={`Ingredient ${index + 1} name`}
+                  data-field="name"
+                  placeholder="Ingredient"
+                  autoComplete="off"
+                  maxLength={MAX_INGREDIENT_NAME}
+                  className={cn(boxClass, 'flex-1')}
+                  value={row.name}
+                  onChange={(e) => editRow(row.key, 'name', e.target.value)}
+                  onBlur={(e) => onRowBlur(e, row.key)}
+                  onKeyDown={(e) => onRowKeyDown(e, row.key, 'name')}
+                />
+              </li>
+            ) : (
+              <li key={row.key}>
+                <button
+                  type="button"
+                  ref={trigger(`row:${row.key}`)}
+                  title={`Edit ingredient ${index + 1}`}
+                  className={cn(triggerClass, 'block w-full')}
+                  onClick={() => openIngredient(row.key)}
+                >
+                  {`${row.amount.trim()} ${row.name.trim()}`.trim()}
+                </button>
+              </li>
+            ),
+          )}
+          {/* The last row, where the next ingredient lands: the + until clicked, then the new row in its place. */}
+          {openRow !== null && openRow === addingRow ? null : (
+            <li>
+              <Button ref={trigger('plus')} variant="ghost" size="icon-sm" className="focus-visible:ring-inset" aria-label="Add ingredient" onClick={addIngredient}>
+                <PlusIcon />
+              </Button>
             </li>
-          ))}
+          )}
         </ul>
       </Area>
       <Area

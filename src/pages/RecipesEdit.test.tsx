@@ -551,7 +551,7 @@ describe('editing one field at a time', () => {
     expect(screen.getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
     expect(screen.getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')
     expect(screen.getByTitle('Edit prep minutes')).toHaveTextContent('Add prep time')
-    expect(screen.queryAllByRole('textbox').filter((box) => !/^Ingredient/.test(box.getAttribute('aria-label') ?? ''))).toEqual([])
+    expect(screen.queryAllByRole('textbox')).toEqual([])
   })
 
   it('opens the title from the keyboard with its text selected, and Escape closes it without saving', async () => {
@@ -622,39 +622,59 @@ describe('the ingredient rows', () => {
   }
   const field = (index: number, which: 'amount' | 'name') =>
     screen.getByRole('textbox', { name: `Ingredient ${index} ${which}` }) as HTMLInputElement
+  const plus = () => screen.findByRole('button', { name: 'Add ingredient' })
+  const rowButton = (index: number) => screen.findByTitle(`Edit ingredient ${index}`)
+  const rowTexts = () =>
+    within(screen.getByRole('heading', { name: 'Ingredients' }).parentElement!.parentElement!)
+      .queryAllByTitle(/^Edit ingredient/)
+      .map((b) => b.textContent)
 
-  it('always has a blank row with a placeholder, a border and a limit, even on an empty recipe', async () => {
+  it('shows no ingredients as a note and a plus button, with no boxes', async () => {
     setSessionFlag()
     mockRecipes([{ id: 1, title: 'Water' }])
     renderApp('/recipes/1')
 
-    const amount = await screen.findByRole('textbox', { name: 'Ingredient 1 amount' })
-    const name = screen.getByRole('textbox', { name: 'Ingredient 1 name' })
-    expect(amount).toHaveAttribute('placeholder', 'Amount')
-    expect(amount).toHaveAttribute('maxlength', '50')
-    expect(name).toHaveAttribute('placeholder', 'Ingredient')
-    expect(name).toHaveAttribute('maxlength', '100')
-    expect(amount).toHaveClass('border', 'border-border')
-    expect(name).toHaveClass('border', 'border-border')
-    expect(screen.queryByRole('textbox', { name: 'Ingredient 2 name' })).not.toBeInTheDocument()
+    expect(await screen.findByText('No ingredients yet.')).toBeInTheDocument()
+    expect(await plus()).toBeInTheDocument()
+    expect(screen.queryAllByRole('textbox')).toEqual([])
   })
 
-  it('shows a blank row after the saved rows', async () => {
+  it('shows saved rows as text, amount first, with the plus button after them', async () => {
     setSessionFlag()
     mockRecipes([stew])
     renderApp('/recipes/1')
 
-    await screen.findByRole('textbox', { name: 'Ingredient 1 name' })
-    expect([1, 2, 3, 4].map((i) => field(i, 'name').value)).toEqual(['beef', 'salt', 'pepper', ''])
-    expect(field(1, 'amount').value).toBe('500 g')
+    await rowButton(1)
+    expect(rowTexts()).toEqual(['500 g beef', 'salt', 'a pinch pepper'])
+    expect(screen.queryByText('No ingredients yet.')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('textbox')).toEqual([])
   })
 
-  it('sends the whole list in order when the blank row is filled in, then offers a new blank row', async () => {
+  it('opens a new row on the plus button with the cursor in Amount, and the boxes have placeholders, borders and limits', async () => {
+    setSessionFlag()
+    mockRecipes([stew])
+    renderApp('/recipes/1')
+    await userEvent.click(await plus())
+
+    const amount = field(4, 'amount')
+    const name = field(4, 'name')
+    expect(amount).toHaveFocus()
+    expect(amount).toHaveAttribute('placeholder', 'Amount')
+    expect(amount).toHaveAttribute('maxlength', '50')
+    expect(name).toHaveAttribute('placeholder', 'Ingredient')
+    expect(name).toHaveAttribute('maxlength', '100')
+    for (const box of [amount, name]) expect(box).toHaveClass('border', 'border-border')
+    expect(screen.queryByRole('button', { name: 'Add ingredient' })).not.toBeInTheDocument()
+  })
+
+  it('sends the whole list in order when a new row is left with text, and the plus button comes back', async () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 name' })
+    await userEvent.click(await plus())
     await userEvent.type(field(4, 'amount'), '2 tsp')
+    await userEvent.tab() // into Ingredient: the same row, nothing sent
+    expect(log.patches).toEqual([])
     await userEvent.type(field(4, 'name'), 'thyme')
     await userEvent.tab()
 
@@ -670,86 +690,69 @@ describe('the ingredient rows', () => {
       },
     })
     await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).ingredients).toHaveLength(4))
-    expect([1, 2, 3, 4, 5].map((i) => field(i, 'name').value)).toEqual(['beef', 'salt', 'pepper', 'thyme', ''])
+    await waitFor(() => expect(rowTexts()).toEqual(['500 g beef', 'salt', 'a pinch pepper', '2 tsp thyme']))
+    expect(await plus()).toBeInTheDocument()
   })
 
-  it('keeps the input and its focus while typing into the blank row', async () => {
-    setSessionFlag()
-    mockRecipes([stew])
-    renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 name' })
-    const blankName = field(4, 'name')
-    await userEvent.type(blankName, 'thyme')
-
-    expect(blankName).toHaveFocus()
-    expect(blankName.isConnected).toBe(true)
-    expect(blankName).toHaveValue('thyme')
-    expect(field(5, 'name')).toHaveValue('')
-  })
-
-  it('drops a row cleared of name and amount, keeps focus on the input clicked into, and never sends the blank row', async () => {
+  it('saves on Enter in Ingredient and puts focus back on the plus button', async () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 3 name' })
-    const third = field(3, 'name')
-    await userEvent.clear(field(2, 'name'))
-    await userEvent.click(third) // blurs the emptied row, which is dropped, and moves focus to a row below it
+    await userEvent.click(await plus())
+    await userEvent.type(field(4, 'name'), 'thyme{Enter}')
 
-    expect(third.isConnected).toBe(true)
-    expect(third).toHaveFocus()
-    expect(third).toHaveValue('pepper') // still the same row's input, not another row's that took its place
     await waitFor(() => expect(log.patches).toHaveLength(1))
-    expect(log.patches[0].body).toEqual({
-      recipe: {
-        ingredients: [
-          { name: 'beef', amount: '500 g' },
-          { name: 'pepper', amount: 'a pinch' },
-        ],
-      },
-    })
-    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).ingredients).toHaveLength(2))
-    // The answer replaced the draft without remounting the input that has focus.
-    expect(third.isConnected).toBe(true)
-    expect(third).toHaveFocus()
-    expect(third).toHaveValue('pepper')
-    expect([1, 2, 3].map((i) => field(i, 'name').value)).toEqual(['beef', 'pepper', ''])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add ingredient' })).toHaveFocus())
+    expect(rowTexts()).toContain('thyme')
   })
 
-  it('does not drop a row when focus moves between its own two inputs', async () => {
+  it('closes a new row with Escape without saving, and focus goes back to the plus button', async () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 1 name' })
-    await userEvent.clear(field(1, 'name'))
-    await userEvent.click(field(1, 'amount'))
-    await userEvent.clear(field(1, 'amount'))
+    await userEvent.click(await plus())
+    await userEvent.type(field(4, 'name'), 'thyme')
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryAllByRole('textbox')).toEqual([])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add ingredient' })).toHaveFocus())
     await settle()
-
     expect(log.patches).toEqual([])
-    expect(field(1, 'amount')).toBeInTheDocument()
-    await userEvent.tab() // into the row's name input, still the same row
-    expect(log.patches).toEqual([])
-    await userEvent.tab() // out of the row
-    await waitFor(() => expect(log.patches).toHaveLength(1))
-    expect(log.patches[0].body.recipe.ingredients).toEqual([
-      { name: 'salt', amount: '' },
-      { name: 'pepper', amount: 'a pinch' },
-    ])
+    expect(rowTexts()).toEqual(['500 g beef', 'salt', 'a pinch pepper'])
   })
 
-  it('sends nothing for a blank row that was only visited, or when nothing changed', async () => {
+  it('sends nothing for a new row left blank, and just closes it', async () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 name' })
-    await userEvent.click(field(4, 'name'))
+    await userEvent.click(await plus())
     await userEvent.type(field(4, 'name'), '   ')
-    await userEvent.click(field(1, 'name'))
-    await userEvent.type(field(1, 'name'), ' ')
+    await userEvent.tab()
     await userEvent.tab()
     await settle()
 
+    expect(log.patches).toEqual([])
+    expect(screen.queryAllByRole('textbox')).toEqual([])
+    expect(await plus()).toBeInTheDocument()
+  })
+
+  it('opens a saved row on click or keyboard and keeps both boxes open while tabbing between them', async () => {
+    setSessionFlag()
+    const log = mockRecipes([stew])
+    renderApp('/recipes/1')
+    const opener = await rowButton(2)
+    opener.focus()
+    await userEvent.keyboard('{Enter}')
+
+    expect(field(2, 'amount')).toHaveFocus()
+    expect(field(2, 'name')).toHaveValue('salt')
+    await userEvent.tab()
+    expect(field(2, 'name')).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: 'Ingredient 2 amount' })).toBeInTheDocument()
+    expect(log.patches).toEqual([])
+    await userEvent.tab() // out of the row, unchanged: back to text
+    await waitFor(() => expect(screen.queryAllByRole('textbox')).toEqual([]))
+    await settle()
     expect(log.patches).toEqual([])
   })
 
@@ -757,7 +760,7 @@ describe('the ingredient rows', () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 2 amount' })
+    await userEvent.click(await rowButton(2))
     await userEvent.type(field(2, 'amount'), '1 tsp')
     await userEvent.tab()
     await userEvent.tab()
@@ -768,21 +771,68 @@ describe('the ingredient rows', () => {
       { name: 'salt', amount: '1 tsp' },
       { name: 'pepper', amount: 'a pinch' },
     ])
+    await waitFor(() => expect(rowTexts()[1]).toBe('1 tsp salt'))
   })
 
-  it('shows "Ingredient N: ..." for a row with only an amount, and reverts the rows to the saved list', async () => {
+  it('drops a row cleared of name and amount when it is left, and moving between its own boxes does not', async () => {
     setSessionFlag()
     const log = mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 amount' })
+    await userEvent.click(await rowButton(1))
+    await userEvent.clear(field(1, 'amount'))
+    await userEvent.tab()
+    await userEvent.clear(field(1, 'name'))
+    expect(log.patches).toEqual([]) // both boxes empty, but the row has not been left
+    expect(field(1, 'name')).toBeInTheDocument()
+    await userEvent.tab()
+
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    expect(log.patches[0].body.recipe.ingredients).toEqual([
+      { name: 'salt', amount: '' },
+      { name: 'pepper', amount: 'a pinch' },
+    ])
+    await waitFor(() => expect(rowTexts()).toEqual(['salt', 'a pinch pepper']))
+  })
+
+  it('keeps the row clicked into mounted and focused when the row above is dropped, before and after the answer', async () => {
+    setSessionFlag()
+    const log = mockRecipes([stew])
+    renderApp('/recipes/1')
+    await userEvent.click(await rowButton(2))
+    await userEvent.clear(field(2, 'name'))
+    const thirdItem = (await rowButton(3)).closest('li')!
+    await userEvent.click(within(thirdItem).getByTitle('Edit ingredient 3')) // leaves row 2, which is dropped
+
+    // Row 3 is now the second row. It is the same list item, open, with the focus in its Amount box.
+    await waitFor(() => expect(within(thirdItem).getByRole('textbox', { name: 'Ingredient 2 amount' })).toHaveFocus())
+    expect(thirdItem.isConnected).toBe(true)
+    expect(within(thirdItem).getByRole('textbox', { name: 'Ingredient 2 name' })).toHaveValue('pepper')
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    expect(log.patches[0].body.recipe.ingredients).toEqual([
+      { name: 'beef', amount: '500 g' },
+      { name: 'pepper', amount: 'a pinch' },
+    ])
+    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).ingredients).toHaveLength(2))
+    // The answer replaced the draft without remounting the row that has focus.
+    expect(thirdItem.isConnected).toBe(true)
+    expect(within(thirdItem).getByRole('textbox', { name: 'Ingredient 2 amount' })).toHaveFocus()
+    expect(within(thirdItem).getByRole('textbox', { name: 'Ingredient 2 name' })).toHaveValue('pepper')
+  })
+
+  it('shows "Ingredient N: ..." for a row with only an amount, and goes back to the saved list', async () => {
+    setSessionFlag()
+    const log = mockRecipes([stew])
+    renderApp('/recipes/1')
+    await userEvent.click(await plus())
     await userEvent.type(field(4, 'amount'), '2 tsp')
-    await userEvent.click(field(1, 'name'))
+    await userEvent.tab()
+    await userEvent.tab()
 
     const message = await screen.findByText("Ingredient 4: Name can't be blank.")
     expect(message.closest('[role="alert"]')).toHaveClass('text-destructive')
     expect(log.patches).toHaveLength(1)
-    await waitFor(() => expect([1, 2, 3, 4].map((i) => field(i, 'name').value)).toEqual(['beef', 'salt', 'pepper', '']))
-    expect(field(4, 'amount')).toHaveValue('')
+    await waitFor(() => expect(rowTexts()).toEqual(['500 g beef', 'salt', 'a pinch pepper']))
+    expect(screen.queryAllByRole('textbox')).toEqual([])
     expect((queryClient.getQueryData(['recipes', '1']) as Recipe).ingredients).toHaveLength(3)
   })
 
@@ -790,22 +840,22 @@ describe('the ingredient rows', () => {
     setSessionFlag()
     mockRecipes([stew])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 2 name' })
+    await userEvent.click(await rowButton(2))
     fireEvent.change(field(2, 'name'), { target: { value: 'x'.repeat(101) } })
-    await userEvent.click(field(2, 'name'))
     await userEvent.tab()
     await userEvent.tab()
 
     expect(await screen.findByText('Ingredient 2: Name is too long (maximum is 100 characters).')).toBeInTheDocument()
+    await waitFor(() => expect(rowTexts()[1]).toBe('salt'))
   })
 
-  it('keeps the typed rows on a 500 and sends them again on the next blur', async () => {
+  it('keeps the row open with its typed text on a 500, and sends again on the next leave', async () => {
     setSessionFlag()
     const log = mockRecipes([stew], {
       onPatch: (n, proceed) => (n === 0 ? HttpResponse.json({}, { status: 500 }) : proceed()),
     })
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 name' })
+    await userEvent.click(await plus())
     await userEvent.type(field(4, 'name'), 'thyme')
     await userEvent.tab()
     await userEvent.tab()
@@ -813,24 +863,26 @@ describe('the ingredient rows', () => {
     expect(await screen.findByText('Could not save. Try again.')).toBeInTheDocument()
     expect(field(4, 'name')).toHaveValue('thyme')
     await userEvent.click(field(4, 'name'))
-    await userEvent.click(field(1, 'name'))
+    await userEvent.tab()
+    await userEvent.tab()
 
     await waitFor(() => expect(log.patches).toHaveLength(2))
     await waitFor(() => expect(screen.queryByText('Could not save. Try again.')).not.toBeInTheDocument())
     await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).ingredients).toHaveLength(4))
+    await waitFor(() => expect(screen.queryAllByRole('textbox')).toEqual([]))
   })
 
   it('replaces the cache with the answer so leaving and returning shows the new list', async () => {
     setSessionFlag()
     const log = mockRecipes([stew, chili])
     renderApp('/recipes/1')
-    await screen.findByRole('textbox', { name: 'Ingredient 4 name' })
+    await userEvent.click(await plus())
     await userEvent.type(field(4, 'name'), 'thyme')
     await userEvent.click(screen.getByRole('link', { name: 'Chili' }))
     await screen.findByRole('heading', { name: 'Chili' })
     await userEvent.click(screen.getByRole('link', { name: 'Stew' }))
 
-    await waitFor(() => expect(field(4, 'name')).toHaveValue('thyme'))
+    await waitFor(() => expect(rowTexts()).toEqual(['500 g beef', 'salt', 'a pinch pepper', 'thyme']))
     expect(log.gets['1']).toBe(1)
   })
 })
