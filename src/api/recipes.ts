@@ -34,3 +34,12 @@ export async function getRecipe(id: string): Promise<Recipe> {
   const body = (await response.json()) as { recipe: Recipe }
   return body.recipe
 }
+
+// POST /recipes: makes a recipe titled "New recipe" for the logged-in user and returns it. Sends no body: the API
+// accepts no fields. Rejects with ApiError otherwise.
+export async function createRecipe(): Promise<Recipe> {
+  const response = await apiFetch('/recipes', { method: 'POST' })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { recipe: Recipe }
+  return body.recipe
+}

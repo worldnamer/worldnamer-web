@@ -433,5 +433,22 @@ export function recipesHandlers(initial: MockRecipe[] = []) {
     })
   })
 
-  return [list, show]
+  // Any body is ignored, as in the API. The new recipe joins the list and show handlers' array.
+  let nextId = Math.max(0, ...recipes.map((r) => r.id)) + 1
+  const create = http.post(`${API_BASE}/recipes`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const recipe = {
+      id: nextId++,
+      title: 'New recipe',
+      ingredients: [],
+      prep_instructions: '',
+      prep_minutes: null,
+      cook_instructions: '',
+      cook_minutes: null,
+    }
+    recipes.push(recipe)
+    return HttpResponse.json({ recipe }, { status: 201 })
+  })
+
+  return [list, show, create]
 }
