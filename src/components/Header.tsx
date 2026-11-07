@@ -1,7 +1,7 @@
 import { Link, NavLink } from 'react-router'
 import { useSession } from '@/auth/useSession'
 import { cn } from '@/lib/utils'
-import { AccountMenu } from './AccountMenu'
+import { Menu } from './Menu'
 import { LoginDialog } from './LoginDialog'
 
 const navLinks = [
@@ -33,7 +33,7 @@ export function Header() {
           </nav>
           {/* Fixed-width slot, so the header does not shift when the session answers. Empty while pending. */}
           <div className="flex h-9 w-16 items-center justify-end">
-            {pending ? null : user ? <AccountMenu username={user.username} /> : <LoginDialog />}
+            {pending ? null : user ? <Menu username={user.username} /> : <LoginDialog />}
           </div>
         </div>
       </div>
