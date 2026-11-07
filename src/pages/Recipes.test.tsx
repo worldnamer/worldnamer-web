@@ -2,13 +2,15 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { MemoryRouter } from 'react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { setSessionFlag } from '@/auth/sessionFlag'
+import { logout } from '@/api/session'
 import { clearAccessToken } from '@/auth/tokenStore'
+import { LAST_RECIPE_KEY, clearLastRecipe } from '@/lib/lastRecipe'
 import { queryClient } from '@/lib/queryClient'
-import { API_BASE, refreshHandler, recipesHandlers } from '@/mocks/handlers'
+import { API_BASE, logoutHandler, refreshHandler, recipesHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
 beforeEach(() => {
@@ -138,17 +140,19 @@ describe('the recipe card', () => {
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByRole('heading', { name: 'Bread' })).toBeInTheDocument()
     const items = within(card).getAllByRole('listitem')
-    expect(items.map((i) => i.textContent)).toEqual(['500 g flour', 'salt'])
-    const prep = within(card).getByText(/Mix\./)
-    expect(prep.textContent).toBe('Mix.\nKnead.')
-    expect(prep).toHaveClass('whitespace-pre-line')
+    expect(items.slice(0, 2).map((i) => i.textContent)).toEqual(['500 g flour', 'salt'])
+    expect(within(card).getByRole('button', { name: 'Add ingredient' })).toBeInTheDocument()
+    expect(within(card).queryAllByRole('textbox')).toEqual([])
+    const prepText = within(card).getByTitle('Edit prep instructions')
+    expect(prepText.textContent).toBe('Mix.\nKnead.')
+    expect(prepText.querySelector('span')).toHaveClass('whitespace-pre-line')
     const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
     expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
-    expect(within(prepLine).getByText('20 min')).toBeInTheDocument()
+    expect(within(prepLine).getByTitle('Edit prep minutes')).toHaveTextContent('20 min')
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
 
-  it('always shows the three areas, with a muted line for each that is empty', async () => {
+  it('always shows the three areas, with a note and a plus button for no ingredients and prompts for the empty instructions', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Water' }]))
     renderApp('/recipes/2')
@@ -157,9 +161,10 @@ describe('the recipe card', () => {
     for (const name of ['Ingredients', 'Prep', 'Cook']) {
       expect(within(card).getByRole('heading', { name })).toBeInTheDocument()
     }
-    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
-      expect(within(card).getByText(line)).toHaveClass('text-muted-foreground')
-    }
+    expect(within(card).getByText('No ingredients yet.')).toHaveClass('text-muted-foreground')
+    expect(within(card).getByRole('button', { name: 'Add ingredient' })).toBeInTheDocument()
+    expect(within(card).getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
+    expect(within(card).getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')
   })
 
   it('shows what exists when an area has only a time or only text', async () => {
@@ -171,22 +176,21 @@ describe('the recipe card', () => {
     renderApp('/recipes/2')
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
-    expect(within(card).getByText('2 hr 5 min')).toBeInTheDocument()
-    expect(within(card).getByText('Simmer.')).toBeInTheDocument()
-    expect(within(card).queryByText('No prep.')).not.toBeInTheDocument()
-    expect(within(card).queryByText('No cooking.')).not.toBeInTheDocument()
-    expect(within(card).getByText('No ingredients.')).toBeInTheDocument()
+    expect(within(card).getByTitle('Edit prep minutes')).toHaveTextContent('2 hr 5 min')
+    expect(within(card).getByTitle('Edit cooking instructions')).toHaveTextContent('Simmer.')
+    expect(within(card).getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
+    expect(within(card).getByText('No ingredients yet.')).toBeInTheDocument()
   })
 
-  it('shows 0 min on the heading line when a time is null, and none on Ingredients', async () => {
+  it('shows a prompt on the heading line when a time is null, and none on Ingredients', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers([{ id: 2, title: 'Salad', cook_instructions: 'Toss.' }]))
     renderApp('/recipes/2')
 
     const cookLine = (await screen.findByRole('heading', { name: 'Cook' })).parentElement!
-    expect(within(cookLine).getByText('0 min')).toHaveClass('text-sm', 'text-muted-foreground')
+    expect(within(cookLine).getByTitle('Edit cook minutes')).toHaveTextContent('Add cooking time')
     const prepLine = screen.getByRole('heading', { name: 'Prep' }).parentElement!
-    expect(within(prepLine).getByText('0 min')).toBeInTheDocument()
+    expect(within(prepLine).getByTitle('Edit prep minutes')).toHaveTextContent('Add prep time')
     const ingredientsLine = screen.getByRole('heading', { name: 'Ingredients' }).parentElement!
     expect(ingredientsLine.children).toHaveLength(1)
   })
@@ -199,7 +203,7 @@ describe('the recipe card', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(card.querySelector('img, b')).toBeNull()
-    expect(within(card).getByText('<b>bold</b> **x**')).toBeInTheDocument()
+    expect(within(card).getByTitle('Edit prep instructions')).toHaveTextContent('<b>bold</b> **x**')
   })
 
   it('redirects to /recipes on a 404, showing the rolodex and no card, and asks only once', async () => {
@@ -242,7 +246,7 @@ describe('the recipe card', () => {
     await screen.findByRole('heading', { name: 'Bread' })
     await userEvent.click(screen.getByRole('link', { name: 'Chili' }))
     expect(await screen.findByRole('heading', { name: 'Chili' })).toBeInTheDocument()
-    expect(screen.getByText('Simmer.')).toBeInTheDocument()
+    expect(screen.getByTitle('Edit cooking instructions')).toHaveTextContent('Simmer.')
   })
 })
 
@@ -292,9 +296,9 @@ describe('adding a recipe', () => {
 
     const card = await screen.findByRole('region', { name: 'Recipe card' })
     expect(within(card).getByRole('heading', { name: 'New recipe' })).toBeInTheDocument()
-    for (const line of ['No ingredients.', 'No prep.', 'No cooking.']) {
-      expect(within(card).getByText(line)).toBeInTheDocument()
-    }
+    expect(within(card).getByText('No ingredients yet.')).toBeInTheDocument()
+    expect(within(card).getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
+    expect(within(card).getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')
     const rolodex = screen.getByRole('region', { name: 'Recipes' })
     await waitFor(() =>
       expect(within(rolodex).getAllByRole('link').map((l) => l.textContent)).toEqual([
@@ -400,5 +404,148 @@ describe('adding a recipe', () => {
     await userEvent.click(await addButton())
     await screen.findByRole('region', { name: 'Recipe card' })
     expect(seen).toEqual({ body: '', type: null })
+  })
+})
+
+describe('reopening the last viewed recipe', () => {
+  const list = [
+    { id: 1, title: 'Bread' },
+    { id: 2, title: 'Chili' },
+  ]
+
+  // Shows where the router is, and lets a test press Back.
+  function Probe() {
+    const location = useLocation()
+    const navigate = useNavigate()
+    return (
+      <>
+        <output aria-label="path">{location.pathname}</output>
+        <button onClick={() => navigate(-1)}>back</button>
+      </>
+    )
+  }
+
+  function renderAt(entries: string[]) {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+          <Probe />
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('remembers the id of a recipe when it opens, and nothing else about it', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers(list))
+    renderApp('/recipes/2')
+
+    await screen.findByRole('heading', { name: 'Chili' })
+    await waitFor(() => expect(localStorage.getItem(LAST_RECIPE_KEY)).toBe('2'))
+  })
+
+  it('opens the saved recipe from /recipes without leaving /recipes in the history', async () => {
+    setSessionFlag()
+    localStorage.setItem(LAST_RECIPE_KEY, '2')
+    server.use(refreshHandler, ...recipesHandlers(list))
+    renderAt(['/', '/recipes'])
+
+    expect(await screen.findByRole('heading', { name: 'Chili' })).toBeInTheDocument()
+    expect(screen.getByLabelText('path')).toHaveTextContent('/recipes/2')
+    await userEvent.click(screen.getByRole('button', { name: 'back' }))
+    expect(screen.getByLabelText('path')).toHaveTextContent(/^\/$/)
+  })
+
+  it('forgets a saved id that is not in the list and shows the plain page', async () => {
+    setSessionFlag()
+    localStorage.setItem(LAST_RECIPE_KEY, '9')
+    server.use(refreshHandler, ...recipesHandlers(list))
+    renderAt(['/recipes'])
+
+    expect(await screen.findByText('Pick a recipe or add one')).toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem(LAST_RECIPE_KEY)).toBeNull())
+    expect(screen.getByLabelText('path')).toHaveTextContent('/recipes')
+    expect(screen.queryByRole('region', { name: 'Recipe card' })).not.toBeInTheDocument()
+  })
+
+  it('lets a deep link win over the saved recipe, and saves the one opened', async () => {
+    setSessionFlag()
+    localStorage.setItem(LAST_RECIPE_KEY, '2')
+    server.use(refreshHandler, ...recipesHandlers(list))
+    renderAt(['/recipes/1'])
+
+    expect(await screen.findByRole('heading', { name: 'Bread' })).toBeInTheDocument()
+    expect(screen.getByLabelText('path')).toHaveTextContent('/recipes/1')
+    await waitFor(() => expect(localStorage.getItem(LAST_RECIPE_KEY)).toBe('1'))
+  })
+
+  it('ignores a saved value that is not a whole number', async () => {
+    setSessionFlag()
+    localStorage.setItem(LAST_RECIPE_KEY, '2/../x')
+    server.use(refreshHandler, ...recipesHandlers(list))
+    renderAt(['/recipes'])
+
+    expect(await screen.findByText('Pick a recipe or add one')).toBeInTheDocument()
+    expect(screen.getByLabelText('path')).toHaveTextContent('/recipes')
+  })
+
+  it('clears the saved id when the session ends', async () => {
+    localStorage.setItem(LAST_RECIPE_KEY, '2')
+    server.use(logoutHandler)
+    await logout()
+
+    expect(localStorage.getItem(LAST_RECIPE_KEY)).toBeNull()
+  })
+
+  it('works when storage cannot be read', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers(list))
+    const getItem = Storage.prototype.getItem
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+      if (key === LAST_RECIPE_KEY) throw new Error('blocked')
+      return getItem.call(this, key)
+    })
+    renderAt(['/recipes'])
+
+    expect(await screen.findByText('Pick a recipe or add one')).toBeInTheDocument()
+    read.mockRestore()
+  })
+
+  it('still opens a recipe when storage cannot be written', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...recipesHandlers(list))
+    const setItem = Storage.prototype.setItem
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === LAST_RECIPE_KEY) throw new Error('full')
+      setItem.call(this, key, value)
+    })
+    renderAt(['/recipes/1'])
+
+    expect(await screen.findByRole('heading', { name: 'Bread' })).toBeInTheDocument()
+    write.mockRestore()
+  })
+
+  it('does not reopen a recipe that answered 404, even while the list still names it', async () => {
+    setSessionFlag()
+    localStorage.setItem(LAST_RECIPE_KEY, '1')
+    server.use(
+      refreshHandler,
+      http.get(`${API_BASE}/recipes/1`, () => HttpResponse.json({ error: { code: 'not_found', message: 'Not found.' } }, { status: 404 })),
+      ...recipesHandlers(list),
+    )
+    renderAt(['/recipes/1'])
+
+    expect(await screen.findByText('Pick a recipe or add one')).toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem(LAST_RECIPE_KEY)).toBeNull())
+    expect(screen.getByLabelText('path')).toHaveTextContent('/recipes')
+  })
+
+  it('does not fail to forget when storage cannot be written', () => {
+    const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    expect(() => clearLastRecipe()).not.toThrow()
+    remove.mockRestore()
   })
 })
