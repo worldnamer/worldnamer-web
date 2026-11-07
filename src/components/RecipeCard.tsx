@@ -5,6 +5,7 @@ import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
 import { getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
 import { formatMinutes } from '@/lib/duration'
+import { forgetLastRecipe, setLastRecipe } from '@/lib/lastRecipe'
 import { Button } from '@/components/ui/button'
 import { useRecipeSaver } from '@/lib/useRecipeSaver'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,17 @@ function SelectedRecipe({ id }: { id: string }) {
     retry: false,
     staleTime: 10_000,
   })
+
+  // Remember the recipe once it has opened, so /recipes can come back to it.
+  const opened = data !== undefined
+  useEffect(() => {
+    if (opened) setLastRecipe(id)
+  }, [opened, id])
+  // A recipe the API does not have must not be reopened from /recipes, even while the list still names it.
+  const gone = error instanceof ApiError && error.status === 404
+  useEffect(() => {
+    if (gone) forgetLastRecipe(id)
+  }, [gone, id])
 
   if (error instanceof ApiError && error.status === 404) return <Navigate to="/recipes" replace />
   if (isPending) return null

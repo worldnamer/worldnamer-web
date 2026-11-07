@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { createRecipe, listRecipes } from '@/api/recipes'
 import { Button } from '@/components/ui/button'
+import { clearLastRecipe, getLastRecipe } from '@/lib/lastRecipe'
 import { cn } from '@/lib/utils'
 
 // The user's recipe titles, each a link to its recipe card. The selected recipe comes from the address (/recipes/:id)
@@ -17,6 +18,16 @@ export function RecipeRolodex() {
   const [failed, setFailed] = useState(false)
   const busy = useRef(false) // set at once, since the button is only disabled on the next render
   const { data, isPending, isError } = useQuery({ queryKey: ['recipes'], queryFn: listRecipes, retry: false })
+  // Opening /recipes with no recipe in the address reopens the last one viewed, if it is still in the list; replace keeps
+  // Back from bouncing to /recipes and forward again. An id no longer in the list is forgotten. An address with an id
+  // is never touched.
+  useEffect(() => {
+    if (id !== undefined || !data) return
+    const saved = getLastRecipe()
+    if (saved === null) return
+    if (data.some((recipe) => String(recipe.id) === saved)) navigate(`/recipes/${saved}`, { replace: true })
+    else clearLastRecipe()
+  }, [id, data, navigate])
   const create = useMutation({
     mutationFn: createRecipe,
     onMutate: () => setFailed(false),

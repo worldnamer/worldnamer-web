@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ApiError } from '@/api/client'
+import { forgetLastRecipe } from '@/lib/lastRecipe'
 import { updateRecipe, type Recipe, type RecipePatch } from '@/api/recipes'
 
 export const SAVE_FAILED_MESSAGE = 'Could not save. Try again.'
@@ -82,6 +83,7 @@ export function useRecipeSaver(id: string) {
       if (error instanceof ApiError && error.status === 404) {
         // The recipe is gone or was never the user's: forget it, and leave unless the user has already moved on.
         queryClient.removeQueries({ queryKey: ['recipes', id] })
+        forgetLastRecipe(id)
         void queryClient.invalidateQueries({ queryKey: ['recipes'], exact: true })
         if (mounted.current) navigate('/recipes', { replace: true })
         return
