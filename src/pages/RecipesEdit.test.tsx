@@ -76,7 +76,27 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 60))
 const bread = { id: 1, title: 'Bread', prep_instructions: 'Mix.' }
 const chili = { id: 2, title: 'Chili' }
 
-const titleBox = () => screen.findByRole('textbox', { name: 'Recipe title' })
+// A closed field is a button; clicking it opens its box.
+const OPENER: Record<string, string> = {
+  'Recipe title': 'Edit recipe title',
+  'Prep instructions': 'Edit prep instructions',
+  'Cooking instructions': 'Edit cooking instructions',
+  'Prep minutes': 'Edit prep minutes',
+  'Cook minutes': 'Edit cook minutes',
+}
+
+async function openBox(name: string) {
+  await userEvent.click(await screen.findByTitle(OPENER[name]))
+  return screen.findByRole('textbox', { name })
+}
+
+const titleBox = () => openBox('Recipe title')
+
+// The title as formatted text: its box is closed and the heading holds the saved title.
+async function expectTitleText(text: string) {
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Recipe title' })).not.toBeInTheDocument())
+  expect(screen.getByRole('heading', { name: text })).toBeInTheDocument()
+}
 
 async function retitle(text: string) {
   const box = await titleBox()
@@ -110,7 +130,7 @@ describe('saving the title on blur', () => {
     await settle()
 
     expect(log.patches).toEqual([])
-    expect(box).toHaveValue('Bread')
+    await expectTitleText('Bread')
   })
 
   it('puts the saved title back and sends nothing when the title is blanked', async () => {
@@ -124,7 +144,7 @@ describe('saving the title on blur', () => {
     await settle()
 
     expect(log.patches).toEqual([])
-    expect(box).toHaveValue('Bread')
+    await expectTitleText('Bread')
   })
 
   it('shows the API message on a 422, returns to the saved title and leaves the cache alone', async () => {
@@ -138,7 +158,7 @@ describe('saving the title on blur', () => {
 
     const message = await screen.findByText('Title is too long (maximum is 100 characters).')
     expect(message.closest('[role="alert"]')).toHaveClass('text-destructive')
-    expect(box).toHaveValue('Bread')
+    await expectTitleText('Bread')
     expect(log.patches).toHaveLength(1)
     expect((queryClient.getQueryData(['recipes', '1']) as Recipe).title).toBe('Bread')
   })
@@ -153,7 +173,7 @@ describe('saving the title on blur', () => {
     await userEvent.tab()
     await screen.findByText(/Title is too long/)
 
-    await userEvent.type(box, 'a')
+    await userEvent.type(await titleBox(), 'a')
     expect(screen.queryByText(/Title is too long/)).not.toBeInTheDocument()
   })
 
@@ -210,7 +230,8 @@ describe('saving the title on blur', () => {
     renderApp('/recipes/1')
     const card = await screen.findByRole('region', { name: 'Recipe card' })
 
-    expect(within(card).queryAllByRole('button')).toEqual([])
+    await userEvent.click(await screen.findByTitle('Edit recipe title'))
+    expect(within(card).queryByRole('button', { name: /save|cancel/i })).not.toBeInTheDocument()
   })
 })
 
@@ -246,7 +267,7 @@ describe('the cache after a save', () => {
     setSessionFlag()
     const log = mockRecipes([bread])
     renderApp('/recipes/1')
-    const prep = await screen.findByRole('textbox', { name: 'Prep instructions' })
+    const prep = await openBox('Prep instructions')
     await userEvent.type(prep, ' More.')
     await userEvent.tab()
     await waitFor(() => expect(log.patches).toHaveLength(1))
@@ -296,7 +317,7 @@ describe('overlapping saves', () => {
     renderApp('/recipes/1')
     await retitle('Rye')
     await waitFor(() => expect(log.patches).toHaveLength(1)) // the first PATCH has arrived and is held
-    const prep = screen.getByRole('textbox', { name: 'Prep instructions' })
+    const prep = await openBox('Prep instructions')
     await userEvent.clear(prep)
     await userEvent.type(prep, 'Stir.')
     await userEvent.tab()
@@ -309,8 +330,8 @@ describe('overlapping saves', () => {
     expect(log.patches.map((p) => Object.keys(p.body.recipe))).toEqual([['title'], ['prep_instructions']])
     await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_instructions).toBe('Stir.'))
     expect(queryClient.getQueryData(['recipes', '1'])).toMatchObject({ title: 'Rye', prep_instructions: 'Stir.' })
-    expect(screen.getByRole('heading', { name: 'Rye' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Prep instructions' })).toHaveValue('Stir.')
+    await expectTitleText('Rye')
+    await waitFor(() => expect(screen.getByTitle('Edit prep instructions')).toHaveTextContent('Stir.'))
   })
 
   it('runs the second save after the first failed', async () => {
@@ -328,7 +349,7 @@ describe('overlapping saves', () => {
     renderApp('/recipes/1')
     await retitle('Rye')
     await waitFor(() => expect(log.patches).toHaveLength(1))
-    const prep = screen.getByRole('textbox', { name: 'Prep instructions' })
+    const prep = await openBox('Prep instructions')
     await userEvent.clear(prep)
     await userEvent.type(prep, 'Stir.')
     await userEvent.tab()
@@ -348,7 +369,7 @@ describe('the instruction boxes', () => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread' }])
     renderApp('/recipes/1')
-    const prep = await screen.findByRole('textbox', { name: 'Prep instructions' })
+    const prep = await openBox('Prep instructions')
     await userEvent.type(prep, 'Mix <b>well</b>.{Enter}Knead.')
     await userEvent.tab()
 
@@ -365,7 +386,7 @@ describe('the instruction boxes', () => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread' }])
     renderApp('/recipes/1')
-    await userEvent.type(await screen.findByRole('textbox', { name: 'Cooking instructions' }), 'Bake.')
+    await userEvent.type(await openBox('Cooking instructions'), 'Bake.')
     await userEvent.tab()
 
     await waitFor(() => expect(log.patches).toHaveLength(1))
@@ -376,13 +397,14 @@ describe('the instruction boxes', () => {
     setSessionFlag()
     mockRecipes([bread])
     renderApp('/recipes/1')
-    const prep = await screen.findByRole('textbox', { name: 'Prep instructions' })
+    const prep = await openBox('Prep instructions')
     fireEvent.change(prep, { target: { value: 'x'.repeat(10_001) } })
     await userEvent.click(prep)
     await userEvent.tab()
 
     expect(await screen.findByText('Prep instructions is too long (maximum is 10000 characters).')).toBeInTheDocument()
-    expect(prep).toHaveValue('Mix.')
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Prep instructions' })).not.toBeInTheDocument())
+    expect(screen.getByTitle('Edit prep instructions')).toHaveTextContent('Mix.')
   })
 })
 
@@ -399,7 +421,7 @@ describe('where data goes in', () => {
       ['Prep instructions', 'Prep instructions'],
       ['Cooking instructions', 'Cooking instructions'],
     ]) {
-      const box = screen.getByRole('textbox', { name })
+      const box = await openBox(name)
       expect(box).toHaveAttribute('placeholder', placeholder)
       expect(box).toHaveAttribute('maxlength', '10000')
     }
@@ -407,19 +429,34 @@ describe('where data goes in', () => {
   })
 })
 
-describe('the minutes boxes', () => {
-  const minutesBox = (name: string) => screen.findByRole('textbox', { name })
+describe('the minutes', () => {
+  const minutesBox = (name: string) => openBox(name)
+  const closed = (title: string) => screen.findByTitle(title)
 
-  it('sit on their heading lines with a placeholder, a border, a limit and no hr min text', async () => {
+  it('show as hours and minutes on the heading lines, or a prompt when empty', async () => {
+    setSessionFlag()
+    mockRecipes([{ id: 1, title: 'Stew', prep_minutes: 125 }])
+    renderApp('/recipes/1')
+
+    const prep = await closed('Edit prep minutes')
+    expect(prep).toHaveTextContent('2 hr 5 min')
+    expect(within(screen.getByRole('heading', { name: 'Prep' }).parentElement!).getByTitle('Edit prep minutes')).toBe(prep)
+    const cook = await closed('Edit cook minutes')
+    expect(cook).toHaveTextContent('Add cooking time')
+    expect(within(screen.getByRole('heading', { name: 'Cook' }).parentElement!).getByTitle('Edit cook minutes')).toBe(cook)
+    expect(screen.queryByRole('textbox', { name: /minutes/ })).not.toBeInTheDocument()
+  })
+
+  it('open a number box with a placeholder, a border and a limit', async () => {
     setSessionFlag()
     mockRecipes([{ id: 1, title: 'Stew', prep_minutes: 125 }])
     renderApp('/recipes/1')
 
     const prep = await minutesBox('Prep minutes')
     expect(prep).toHaveValue('125')
+    expect(prep).toHaveFocus()
     expect(within(screen.getByRole('heading', { name: 'Prep' }).parentElement!).getByRole('textbox', { name: 'Prep minutes' })).toBe(prep)
-    const cook = screen.getByRole('textbox', { name: 'Cook minutes' })
-    expect(within(screen.getByRole('heading', { name: 'Cook' }).parentElement!).getByRole('textbox', { name: 'Cook minutes' })).toBe(cook)
+    const cook = await minutesBox('Cook minutes')
     expect(cook).toHaveValue('')
     for (const box of [prep, cook]) {
       expect(box).toHaveAttribute('placeholder', 'min')
@@ -427,24 +464,24 @@ describe('the minutes boxes', () => {
       expect(box).toHaveAttribute('inputmode', 'numeric')
       expect(box).toHaveClass('border', 'border-border')
     }
-    expect(screen.queryByText(/\bhr\b/)).not.toBeInTheDocument()
   })
 
-  it('sends a typed number as a number, and the saved value stays in the box', async () => {
+  it('send a typed number as a number and go back to text showing the saved time', async () => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread' }])
     renderApp('/recipes/1')
     const box = await minutesBox('Prep minutes')
-    await userEvent.type(box, '45')
+    await userEvent.type(box, '80')
     await userEvent.tab()
 
     await waitFor(() => expect(log.patches).toHaveLength(1))
-    expect(log.patches[0].body).toEqual({ recipe: { prep_minutes: 45 } })
-    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_minutes).toBe(45))
-    expect(box).toHaveValue('45')
+    expect(log.patches[0].body).toEqual({ recipe: { prep_minutes: 80 } })
+    await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_minutes).toBe(80))
+    expect(await closed('Edit prep minutes')).toHaveTextContent('1 hr 20 min')
+    expect(screen.queryByRole('textbox', { name: 'Prep minutes' })).not.toBeInTheDocument()
   })
 
-  it('sends null when the box is cleared', async () => {
+  it('send null when the box is cleared', async () => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread', cook_minutes: 30 }])
     renderApp('/recipes/1')
@@ -455,10 +492,10 @@ describe('the minutes boxes', () => {
     await waitFor(() => expect(log.patches).toHaveLength(1))
     expect(log.patches[0].body).toEqual({ recipe: { cook_minutes: null } })
     await waitFor(() => expect((queryClient.getQueryData(['recipes', '1']) as Recipe).cook_minutes).toBeNull())
-    expect(box).toHaveValue('')
+    expect(await closed('Edit cook minutes')).toHaveTextContent('Add cooking time')
   })
 
-  it('sends nothing when the value is unchanged', async () => {
+  it('send nothing when the value is unchanged', async () => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread', prep_minutes: 20 }])
     renderApp('/recipes/1')
@@ -468,14 +505,14 @@ describe('the minutes boxes', () => {
     await settle()
 
     expect(log.patches).toEqual([])
-    expect(box).toHaveValue('20')
+    expect(await closed('Edit prep minutes')).toHaveTextContent('20 min')
   })
 
   it.each([
     ['0', 0, 'Prep minutes must be greater than 0.'],
     ['-1', '-1', 'Prep minutes must be greater than 0.'],
     ['abc', 'abc', 'Prep minutes must be an integer.'],
-  ])('sends %s, shows the API message on that field and goes back to the saved value', async (typed, sent, message) => {
+  ])('send %s, show the API message on that field and go back to the saved time', async (typed, sent, message) => {
     setSessionFlag()
     const log = mockRecipes([{ id: 1, title: 'Bread', prep_minutes: 20 }])
     renderApp('/recipes/1')
@@ -486,8 +523,90 @@ describe('the minutes boxes', () => {
 
     expect(await screen.findByText(message)).toBeInTheDocument()
     expect(log.patches[0].body).toEqual({ recipe: { prep_minutes: sent } })
-    expect(box).toHaveValue('20')
+    expect(await closed('Edit prep minutes')).toHaveTextContent('20 min')
     expect((queryClient.getQueryData(['recipes', '1']) as Recipe).prep_minutes).toBe(20)
+  })
+
+  it('save on Enter and give focus back to the text', async () => {
+    setSessionFlag()
+    const log = mockRecipes([{ id: 1, title: 'Bread' }])
+    renderApp('/recipes/1')
+    const box = await minutesBox('Cook minutes')
+    await userEvent.type(box, '15{Enter}')
+
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    const text = await closed('Edit cook minutes')
+    await waitFor(() => expect(text).toHaveFocus())
+    expect(text).toHaveTextContent('15 min')
+  })
+})
+
+describe('editing one field at a time', () => {
+  it('shows every field as text, with a prompt for the empty ones, and no boxes', async () => {
+    setSessionFlag()
+    mockRecipes([{ id: 1, title: 'Bread' }])
+    renderApp('/recipes/1')
+
+    expect(await screen.findByRole('heading', { name: 'Bread' })).toBeInTheDocument()
+    expect(screen.getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
+    expect(screen.getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')
+    expect(screen.getByTitle('Edit prep minutes')).toHaveTextContent('Add prep time')
+    expect(screen.queryAllByRole('textbox').filter((box) => !/^Ingredient/.test(box.getAttribute('aria-label') ?? ''))).toEqual([])
+  })
+
+  it('opens the title from the keyboard with its text selected, and Escape closes it without saving', async () => {
+    setSessionFlag()
+    const log = mockRecipes([bread])
+    renderApp('/recipes/1')
+    const opener = await screen.findByTitle('Edit recipe title')
+    opener.focus()
+    await userEvent.keyboard('{Enter}')
+
+    const box = (await screen.findByRole('textbox', { name: 'Recipe title' })) as HTMLInputElement
+    expect(box).toHaveFocus()
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 5])
+    await userEvent.type(box, 'Zzz')
+    await userEvent.keyboard('{Escape}')
+
+    await expectTitleText('Bread')
+    expect(log.patches).toEqual([])
+    expect(screen.getByTitle('Edit recipe title')).toHaveFocus()
+  })
+
+  it('saves the title on Enter, closes the box and returns focus to the heading text', async () => {
+    setSessionFlag()
+    const log = mockRecipes([bread])
+    renderApp('/recipes/1')
+    const box = await titleBox()
+    await userEvent.clear(box)
+    await userEvent.type(box, 'Rye{Enter}')
+
+    await waitFor(() => expect(log.patches).toHaveLength(1))
+    await expectTitleText('Rye')
+    await waitFor(() => expect(screen.getByTitle('Edit recipe title')).toHaveFocus())
+  })
+
+  it('shows the instructions as text with line breaks, markup as text, and opens the box on click', async () => {
+    setSessionFlag()
+    mockRecipes([{ id: 1, title: 'Bread', prep_instructions: 'Mix <b>well</b>.\nKnead.' }])
+    renderApp('/recipes/1')
+
+    const text = await screen.findByTitle('Edit prep instructions')
+    expect(text.querySelector('b')).toBeNull()
+    expect(text.querySelector('span')).toHaveClass('whitespace-pre-line')
+    expect(text.textContent).toBe('Mix <b>well</b>.\nKnead.')
+    const box = await openBox('Prep instructions')
+    expect(box).toHaveValue('Mix <b>well</b>.\nKnead.')
+    expect(box).toHaveFocus()
+  })
+
+  it('gives the heading a pencil cue', async () => {
+    setSessionFlag()
+    mockRecipes([bread])
+    renderApp('/recipes/1')
+
+    const opener = await screen.findByTitle('Edit recipe title')
+    expect(opener.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
 })
 

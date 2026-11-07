@@ -1,15 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { PencilIcon } from 'lucide-react'
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
 import { getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
+import { formatMinutes } from '@/lib/duration'
 import { useRecipeSaver } from '@/lib/useRecipeSaver'
 import { cn } from '@/lib/utils'
 
 // The recipe named in the address (/recipes/:id). With no id it is a prompt, shown only from lg since below that the
 // rolodex is all there is. A 404 (not the user's recipe, or gone) goes back to /recipes without a message. Every
-// piece of recipe text is shown as the value of a text box, never as HTML. Keyed by id so a card's drafts and messages
-// never carry over to another recipe.
+// piece of recipe text is shown as a text node or as the value of a box, never as HTML. The card is formatted text; one
+// field at a time turns into a box while it is edited. Keyed by id so a card's drafts and messages never carry over to
+// another recipe.
 export function RecipeCard() {
   const { id } = useParams()
   if (id === undefined) return <p className="hidden text-sm text-muted-foreground lg:block">Pick a recipe or add one</p>
@@ -105,20 +108,41 @@ function minutesValue(text: string): number | string | null {
   return /^\d+$/.test(text) ? Number(text) : text
 }
 
+// Puts the cursor in a box as it appears, with its text selected. A stable function, so React calls it only on mount.
+function focusAndSelect(element: HTMLInputElement | null) {
+  element?.focus()
+  element?.select()
+}
+
+// The same for a textarea, with the cursor at the end so a long text is not selected by accident.
+function focusAtEnd(element: HTMLTextAreaElement | null) {
+  if (!element) return
+  element.focus()
+  element.setSelectionRange(element.value.length, element.value.length)
+}
+
+// The look of a field at rest: plain text that is a button, with a faint underline on hover and focus as the cue that it
+// can be edited.
+const triggerClass =
+  'cursor-text rounded-sm text-left outline-none hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
 function MinutesBox({
   label,
   value,
   onChange,
   onBlur,
+  onKeyDown,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   onBlur: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void
 }) {
   return (
     <span className="flex items-baseline gap-1 text-sm text-muted-foreground">
       <input
+        ref={focusAndSelect}
         type="text"
         inputMode="numeric"
         aria-label={label}
@@ -129,21 +153,113 @@ function MinutesBox({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        onKeyDown={onKeyDown}
       />
       min
     </span>
   )
 }
 
-// The card. Each box shows its draft, the text being typed, or else the saved value from the cache; only a box that is
-// being edited has a draft, so every other box follows the cache the moment a save lands. A box saves on blur: nothing is
-// sent when the text equals what is saved, and a blank title goes back to the saved one. The draft is dropped when the
-// save succeeds (if the box still holds what was sent) and when the API rejects it, so the card then shows what was
-// last saved.
+type Box = {
+  value: string
+  onChange: (value: string) => void
+  onBlur: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void
+}
+
+// An instructions field: the saved text with its line breaks (or a muted prompt) as a button, or the textarea while it is
+// being edited.
+function InstructionsField({
+  editing,
+  box,
+  text,
+  prompt,
+  label,
+  triggerRef,
+  onOpen,
+}: {
+  editing: boolean
+  box: Box
+  text: string
+  prompt: string
+  label: string
+  triggerRef: (element: HTMLButtonElement | null) => void
+  onOpen: () => void
+}) {
+  if (editing) {
+    return (
+      <textarea
+        ref={focusAtEnd}
+        aria-label={label}
+        placeholder={label}
+        rows={4}
+        maxLength={MAX_INSTRUCTIONS}
+        className={boxClass}
+        value={box.value}
+        onChange={(e) => box.onChange(e.target.value)}
+        onBlur={box.onBlur}
+        onKeyDown={box.onKeyDown}
+      />
+    )
+  }
+  return (
+    <button type="button" ref={triggerRef} title={`Edit ${label.toLowerCase()}`} className={cn(triggerClass, 'block w-full')} onClick={onOpen}>
+      {text === '' ? (
+        <span className="text-sm text-muted-foreground">{prompt}</span>
+      ) : (
+        <span className="block whitespace-pre-line">{text}</span>
+      )}
+    </button>
+  )
+}
+
+// The time on a heading line: "1 hr 20 min" or a muted prompt as a button, or the number box while it is edited.
+function MinutesField({
+  editing,
+  box,
+  minutes,
+  prompt,
+  label,
+  triggerRef,
+  onOpen,
+}: {
+  editing: boolean
+  box: Box
+  minutes: number | null
+  prompt: string
+  label: string
+  triggerRef: (element: HTMLButtonElement | null) => void
+  onOpen: () => void
+}) {
+  if (editing) {
+    return <MinutesBox label={label} value={box.value} onChange={box.onChange} onBlur={box.onBlur} onKeyDown={box.onKeyDown} />
+  }
+  return (
+    <button type="button" ref={triggerRef} title={`Edit ${label.toLowerCase()}`} className={cn(triggerClass, 'text-sm text-muted-foreground')} onClick={onOpen}>
+      {minutes === null ? prompt : formatMinutes(minutes)}
+    </button>
+  )
+}
+
+// The card. Every field is formatted text until it is clicked or reached by keyboard and activated, when that one field
+// becomes a box. Each box shows its draft, the text being typed, or else the saved value from the cache; only a field
+// being edited has a draft, so every other field follows the cache the moment a save lands. Leaving a box saves it:
+// nothing is sent when the text equals what is saved, and a blank title goes back to the saved one. Enter in a one-line
+// box does the same and returns focus to the text, and Escape drops the draft without saving. The box closes when the
+// save succeeds (if it still holds what was sent) or the API rejects it, and the card then shows what was last saved.
+// When the save fails some other way the box stays open with what was typed, and the next blur or Enter retries.
 function Card({ recipe }: { recipe: Recipe }) {
   const { save, errors, clearError } = useRecipeSaver(String(recipe.id))
   const [drafts, setDrafts] = useState<Partial<Record<DraftKey, string>>>({})
   const draftsRef = useRef<Partial<Record<DraftKey, string>>>({}) // what a save's callback must see, not a render's copy
+  const [editing, setEditing] = useState<Partial<Record<DraftKey, boolean>>>({})
+  const triggers = useRef<Partial<Record<DraftKey, HTMLButtonElement | null>>>({})
+  // The field whose text gets focus back once its box has closed after Enter or Escape. Opening any box clears it.
+  const [refocus, setRefocus] = useState<DraftKey | null>(null)
+
+  useEffect(() => {
+    if (refocus !== null && !editing[refocus]) triggers.current[refocus]?.focus()
+  }, [refocus, editing])
 
   function setDraft(key: DraftKey, value: string | undefined) {
     const next = { ...draftsRef.current }
@@ -153,40 +269,97 @@ function Card({ recipe }: { recipe: Recipe }) {
     setDrafts(next)
   }
 
+  function setOpen(key: DraftKey, open: boolean) {
+    setEditing((current) => {
+      const next = { ...current }
+      if (open) next[key] = true
+      else delete next[key]
+      return next
+    })
+  }
+
   function savedText(key: DraftKey): string {
     return key === 'prep_minutes' || key === 'cook_minutes' ? minutesText(recipe[key]) : recipe[key]
   }
 
-  function textBox(key: DraftKey) {
+  function openBox(key: DraftKey) {
+    setRefocus(null)
+    setDraft(key, savedText(key))
+    setOpen(key, true)
+  }
+
+  // The text of a closed field is a button; the card remembers it so focus can go back to it.
+  function trigger(key: DraftKey) {
+    return (element: HTMLButtonElement | null) => {
+      triggers.current[key] = element
+    }
+  }
+
+  function finish(key: DraftKey, viaKey: boolean) {
+    const close = () => {
+      if (viaKey) setRefocus(key)
+      setOpen(key, false)
+    }
+    const draft = draftsRef.current[key]
+    if (draft === undefined) {
+      close()
+      return
+    }
+    const text = draft.trim()
+    if (text === savedText(key) || (key === 'title' && text === '')) {
+      setDraft(key, undefined)
+      close()
+      return
+    }
+    save({
+      key,
+      patch: { [key]: key === 'prep_minutes' || key === 'cook_minutes' ? minutesValue(text) : text },
+      onSaved: () => {
+        if (draftsRef.current[key] === draft) {
+          setDraft(key, undefined)
+          close()
+        }
+      },
+      onRejected: () => {
+        setDraft(key, undefined)
+        close()
+      },
+    })
+  }
+
+  function cancel(key: DraftKey) {
+    setDraft(key, undefined)
+    clearError(key, null)
+    setRefocus(key)
+    setOpen(key, false)
+  }
+
+  function textBox(key: DraftKey, multiline = false) {
     return {
       value: drafts[key] ?? savedText(key),
       onChange: (value: string) => {
         clearError(key, null)
         setDraft(key, value)
       },
-      onBlur: () => {
-        const draft = draftsRef.current[key]
-        if (draft === undefined) return
-        const text = draft.trim()
-        if (text === savedText(key) || (key === 'title' && text === '')) {
-          setDraft(key, undefined)
-          return
+      onBlur: () => finish(key, false),
+      onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          cancel(key)
+        } else if (event.key === 'Enter' && !multiline) {
+          event.preventDefault()
+          finish(key, true)
         }
-        save({
-          key,
-          patch: { [key]: key === 'prep_minutes' || key === 'cook_minutes' ? minutesValue(text) : text },
-          onSaved: () => {
-            if (draftsRef.current[key] === draft) setDraft(key, undefined)
-          },
-          onRejected: () => setDraft(key, undefined),
-        })
       },
     }
   }
 
   const title = textBox('title')
-  const prep = textBox('prep_instructions')
-  const cook = textBox('cook_instructions')
+  const prep = textBox('prep_instructions', true)
+  const cook = textBox('cook_instructions', true)
+  const prepMinutes = textBox('prep_minutes')
+  const cookMinutes = textBox('cook_minutes')
+
   // Ingredient rows. A draft, when there is one, is the whole list of rows being edited. After a save the saved rows keep
   // the keys the draft rows had (savedKeys), so a row does not remount, and lose focus, when the cache takes over again.
   const [ingredientDraft, setIngredientDraft] = useState<Row[] | undefined>(undefined)
@@ -251,23 +424,29 @@ function Card({ recipe }: { recipe: Recipe }) {
     })
   }
 
-  const prepMinutes = textBox('prep_minutes')
-  const cookMinutes = textBox('cook_minutes')
-
   return (
     <section aria-label="Recipe card">
       <h2 className="border-b border-border pb-2 font-display text-2xl font-bold">
-        <input
-          type="text"
-          aria-label="Recipe title"
-          placeholder="Recipe title"
-          autoComplete="off"
-          maxLength={MAX_TITLE}
-          className={cn(boxClass, 'font-display text-2xl font-bold')}
-          value={title.value}
-          onChange={(e) => title.onChange(e.target.value)}
-          onBlur={title.onBlur}
-        />
+        {editing.title ? (
+          <input
+            ref={focusAndSelect}
+            type="text"
+            aria-label="Recipe title"
+            placeholder="Recipe title"
+            autoComplete="off"
+            maxLength={MAX_TITLE}
+            className={cn(boxClass, 'font-display text-2xl font-bold')}
+            value={title.value}
+            onChange={(e) => title.onChange(e.target.value)}
+            onBlur={title.onBlur}
+            onKeyDown={title.onKeyDown}
+          />
+        ) : (
+          <button type="button" ref={trigger('title')} title="Edit recipe title" className={cn(triggerClass, 'group inline-flex items-baseline gap-2')} onClick={() => openBox('title')}>
+            {recipe.title}
+            <PencilIcon aria-hidden="true" className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </button>
+        )}
       </h2>
       <Messages messages={errors.title} />
       <Messages messages={errors.card} />
@@ -304,36 +483,22 @@ function Card({ recipe }: { recipe: Recipe }) {
       </Area>
       <Area
         title="Prep"
-        headingExtra={<MinutesBox label="Prep minutes" value={prepMinutes.value} onChange={prepMinutes.onChange} onBlur={prepMinutes.onBlur} />}
+        headingExtra={
+          <MinutesField editing={!!editing.prep_minutes} box={prepMinutes} minutes={recipe.prep_minutes} prompt="Add prep time" label="Prep minutes" triggerRef={trigger('prep_minutes')} onOpen={() => openBox('prep_minutes')} />
+        }
       >
         <Messages messages={errors.prep_minutes} />
-        <textarea
-          aria-label="Prep instructions"
-          placeholder="Prep instructions"
-          rows={4}
-          maxLength={MAX_INSTRUCTIONS}
-          className={boxClass}
-          value={prep.value}
-          onChange={(e) => prep.onChange(e.target.value)}
-          onBlur={prep.onBlur}
-        />
+        <InstructionsField editing={!!editing.prep_instructions} box={prep} text={recipe.prep_instructions} prompt="Add prep instructions" label="Prep instructions" triggerRef={trigger('prep_instructions')} onOpen={() => openBox('prep_instructions')} />
         <Messages messages={errors.prep_instructions} />
       </Area>
       <Area
         title="Cook"
-        headingExtra={<MinutesBox label="Cook minutes" value={cookMinutes.value} onChange={cookMinutes.onChange} onBlur={cookMinutes.onBlur} />}
+        headingExtra={
+          <MinutesField editing={!!editing.cook_minutes} box={cookMinutes} minutes={recipe.cook_minutes} prompt="Add cooking time" label="Cook minutes" triggerRef={trigger('cook_minutes')} onOpen={() => openBox('cook_minutes')} />
+        }
       >
         <Messages messages={errors.cook_minutes} />
-        <textarea
-          aria-label="Cooking instructions"
-          placeholder="Cooking instructions"
-          rows={4}
-          maxLength={MAX_INSTRUCTIONS}
-          className={boxClass}
-          value={cook.value}
-          onChange={(e) => cook.onChange(e.target.value)}
-          onBlur={cook.onBlur}
-        />
+        <InstructionsField editing={!!editing.cook_instructions} box={cook} text={recipe.cook_instructions} prompt="Add cooking instructions" label="Cooking instructions" triggerRef={trigger('cook_instructions')} onOpen={() => openBox('cook_instructions')} />
         <Messages messages={errors.cook_instructions} />
       </Area>
     </section>
