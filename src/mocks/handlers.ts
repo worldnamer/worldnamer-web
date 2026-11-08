@@ -524,8 +524,8 @@ export function recipesHandlers(initial: MockRecipe[] = []) {
       if (rows.length > 100) fail('ingredients', 'Ingredients has too many rows (maximum is 100).')
       rows.forEach((row, index) => {
         if (row.name === '') fail(`ingredients.${index}.name`, "Name can't be blank.")
-        else if (length(row.name) > 100) fail(`ingredients.${index}.name`, 'Name is too long (maximum is 100 characters).')
-        if (length(row.amount) > 50) fail(`ingredients.${index}.amount`, 'Amount is too long (maximum is 50 characters).')
+        else if (length(row.name) > 50) fail(`ingredients.${index}.name`, 'Name is too long (maximum is 50 characters).')
+        if (length(row.amount) > 49) fail(`ingredients.${index}.amount`, 'Amount is too long (maximum is 49 characters).')
       })
       changes.ingredients = rows
     }

@@ -91,8 +91,8 @@ type DraftKey = TextKey | MinutesKey
 const MAX_TITLE = 100
 const MAX_INSTRUCTIONS = 10_000
 const MAX_MINUTES_DIGITS = 5
-const MAX_INGREDIENT_NAME = 100
-const MAX_INGREDIENT_AMOUNT = 50
+const MAX_INGREDIENT_NAME = 50
+const MAX_INGREDIENT_AMOUNT = 49
 
 // An ingredient row being edited. The key belongs to the row on screen, not to its place in the list, so a row keeps its
 // input (and the focus in it) when another row is dropped above it. Saved rows are keyed s0, s1... and rows typed in
