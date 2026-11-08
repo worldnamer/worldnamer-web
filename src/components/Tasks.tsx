@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PencilIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router'
 import { ApiError } from '@/api/client'
 import {
   createTaskList,
@@ -36,7 +37,12 @@ export function Tasks() {
   })
   // Only the id is kept. The selected list is worked out from it on every render, falling back to the first list, so
   // the first list is selected on load, and again when the selected one is deleted here or in another tab.
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // The first selection can come from the router state ({ taskListId }, left by the recipe card's Create List); a state
+  // without a number, or an id that is not among the lists, gives the first list as before.
+  const { state } = useLocation()
+  const [selectedId, setSelectedId] = useState<number | null>(() =>
+    typeof state?.taskListId === 'number' ? state.taskListId : null,
+  )
   const selected = data?.find((l) => l.id === selectedId) ?? data?.[0]
   // The card's one error line for a failed save. It is cleared when the next save starts.
   const [error, setError] = useState<string | null>(null)

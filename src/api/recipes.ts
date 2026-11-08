@@ -1,4 +1,5 @@
 import { apiErrorFrom, apiFetch } from './client'
+import type { TaskList } from './taskLists'
 
 // A recipe as the list shows it: just enough to pick one.
 export type RecipeSummary = { id: number; title: string }
@@ -74,4 +75,13 @@ export async function updateRecipe(id: string, patch: RecipePatch): Promise<Reci
 export async function deleteRecipe(id: string): Promise<void> {
   const response = await apiFetch(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!response.ok) throw await apiErrorFrom(response)
+}
+
+// POST /recipes/:id/task_list: makes a task list named after the recipe with one task per ingredient, and resolves the
+// new list. Sends no body. Rejects with ApiError otherwise; a 404 means the recipe is not among the user's or is gone.
+export async function createTaskListFromRecipe(id: number | string): Promise<TaskList> {
+  const response = await apiFetch(`/recipes/${encodeURIComponent(String(id))}/task_list`, { method: 'POST' })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { task_list: TaskList }
+  return body.task_list
 }

@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
-import { PencilIcon, PlusIcon } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ListPlusIcon, PencilIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { Navigate, useParams } from 'react-router'
+import { Navigate, useNavigate, useParams } from 'react-router'
 import { ApiError } from '@/api/client'
-import { getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
+import { createTaskListFromRecipe, getRecipe, type Recipe, type RecipeIngredient } from '@/api/recipes'
+import type { TaskList } from '@/api/taskLists'
 import { formatMinutes } from '@/lib/duration'
 import { forgetLastRecipe, setLastRecipe } from '@/lib/lastRecipe'
 import { Button } from '@/components/ui/button'
@@ -275,6 +276,18 @@ function Card({ recipe }: { recipe: Recipe }) {
   const [openRow, setOpenRow] = useState<string | null>(null)
   const [addingRow, setAddingRow] = useState<string | null>(null)
 
+  // Create List: makes a task list from the ingredients, adds it to the cached lists so Tasks has it at once, and goes
+  // home with its id as router state so Tasks selects it. A failure stays on the card with a message.
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const createList = useMutation({
+    mutationFn: () => createTaskListFromRecipe(recipe.id),
+    onSuccess: (list) => {
+      queryClient.setQueryData<TaskList[]>(['task_lists'], (old) => (old ? [...old, list] : old))
+      void navigate('/', { state: { taskListId: list.id } })
+    },
+  })
+
   useEffect(() => {
     if (refocus === null) return
     const isRowTarget = refocus === 'plus' || refocus.startsWith('row:')
@@ -493,6 +506,23 @@ function Card({ recipe }: { recipe: Recipe }) {
 
   return (
     <section aria-label="Recipe card">
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Create List"
+          aria-label="Create List"
+          disabled={recipe.ingredients.length === 0 || createList.isPending}
+          onClick={() => createList.mutate()}
+        >
+          <ListPlusIcon />
+        </Button>
+      </div>
+      {createList.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn't create the list. Try again.
+        </p>
+      )}
       <h2 className="border-b border-border pb-2 font-display text-2xl font-bold">
         {editing.title ? (
           <input
