@@ -57,6 +57,18 @@ describe('section tabs', () => {
     expect(current[0]).toHaveTextContent(home.label)
   })
 
+  it.each(['/recipes', '/recipes/5'])('marks only Recipes as current on %s', async (route) => {
+    setSessionFlag()
+    server.use(refreshHandler)
+    renderLayout(route)
+
+    const tabs = await screen.findByRole('navigation', { name: 'Sections' })
+    const current = tabs.querySelectorAll('[aria-current="page"]')
+    expect(current).toHaveLength(1)
+    expect(current[0]).toHaveTextContent('Recipes')
+    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+
   it('marks no tab on a route that is not a section', async () => {
     setSessionFlag()
     server.use(refreshHandler)

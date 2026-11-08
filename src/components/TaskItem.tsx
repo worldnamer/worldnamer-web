@@ -9,14 +9,9 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDueDate, fromIso, toIso } from '@/lib/isoDate'
 import { refusal } from '@/lib/refusal'
+import { revealOnHover } from '@/lib/revealOnHover'
 import { isBlankText, taskName } from '@/lib/taskText'
 import { cn } from '@/lib/utils'
-
-// The row's icons are hidden only where the device can hover, and come back while the row is hovered or holds focus.
-// Opacity, not removal, so they keep their space (the text does not jump), stay in the tab order and show when
-// focused. Where the device cannot hover (touch) they are always shown.
-const revealOnHover =
-  'can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
 
 // One task, on one line: its checkbox, its text (struck through once checked, and cut with an ellipsis when it does not
 // fit), then its due date if it has one. A checked task stays where it is in the list, and keeps its date.

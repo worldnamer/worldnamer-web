@@ -7,33 +7,49 @@ export const API_BASE = `${import.meta.env.VITE_API_URL}/api/v1`
 export type SessionUser = { username: string }
 
 // Thrown by the API functions when the API answers with a non-2xx status. code and serverMessage come from the error
-// body ({ error: { code, message } }) when it has one; the session functions only pass a status.
+// body ({ error: { code, message } }) when it has one; the session functions only pass a status. fields is the optional
+// { error: { fields } } member of a validation error: field key -> the API's messages for it.
 export class ApiError extends Error {
   status: number
   code?: string
   serverMessage?: string
+  fields?: Record<string, string[]>
 
-  constructor(status: number, code?: string, serverMessage?: string) {
+  constructor(status: number, code?: string, serverMessage?: string, fields?: Record<string, string[]>) {
     super(`HTTP ${status}`)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.serverMessage = serverMessage
+    this.fields = fields
   }
+}
+
+// Reads error.fields defensively: only keys whose value is a list of strings are kept, and nothing is returned when no
+// key survives.
+function fieldsFrom(raw: unknown): Record<string, string[]> | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined
+  const fields: Record<string, string[]> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value) && value.every((m) => typeof m === 'string')) fields[key] = value as string[]
+  }
+  return Object.keys(fields).length > 0 ? fields : undefined
 }
 
 // Builds an ApiError from a non-2xx response. The body is read defensively: it may be empty, not JSON, or not our shape.
 export async function apiErrorFrom(response: Response): Promise<ApiError> {
   let code: string | undefined
   let message: string | undefined
+  let fields: Record<string, string[]> | undefined
   try {
-    const body = (await response.json()) as { error?: { code?: unknown; message?: unknown } }
+    const body = (await response.json()) as { error?: { code?: unknown; message?: unknown; fields?: unknown } }
     if (typeof body.error?.code === 'string') code = body.error.code
     if (typeof body.error?.message === 'string') message = body.error.message
+    fields = fieldsFrom(body.error?.fields)
   } catch {
     // No usable body: only the status is known.
   }
-  return new ApiError(response.status, code, message)
+  return new ApiError(response.status, code, message, fields)
 }
 
 // How long any request may wait for the API before it is given up on.

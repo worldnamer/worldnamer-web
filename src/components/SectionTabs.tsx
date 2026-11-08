@@ -3,7 +3,8 @@ import { sections } from '@/lib/sections'
 import { cn } from '@/lib/utils'
 
 // The sections as a vertical stack of tabs. Shown only from the lg breakpoint up; below it the Menu is the way
-// between sections. `end` keeps the Home tab ("/") from counting as current on every other path.
+// between sections. `end` on the Home tab ("/") keeps it from counting as current on every other path; the other tabs omit it so a
+// section stays current on its nested paths (/recipes/5).
 export function SectionTabs() {
   return (
     <nav aria-label="Sections" className="hidden w-40 shrink-0 flex-col gap-1 text-sm lg:flex">
@@ -11,7 +12,7 @@ export function SectionTabs() {
         <NavLink
           key={section.to}
           to={section.to}
-          end
+          end={section.to === '/'}
           className={({ isActive }) =>
             cn(
               'rounded-md px-3 py-2 transition-colors hover:text-foreground',
