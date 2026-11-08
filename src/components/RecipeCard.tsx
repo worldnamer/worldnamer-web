@@ -506,10 +506,33 @@ function Card({ recipe }: { recipe: Recipe }) {
 
   return (
     <section aria-label="Recipe card">
-      <div className="flex justify-end">
+      <div className="flex items-start gap-2 border-b border-border pb-2">
+        <h2 className="min-w-0 flex-1 font-display text-2xl font-bold">
+          {editing.title ? (
+            <input
+              ref={focusAndSelect}
+              type="text"
+              aria-label="Recipe title"
+              placeholder="Recipe title"
+              autoComplete="off"
+              maxLength={MAX_TITLE}
+              className={cn(boxClass, 'font-display text-2xl font-bold')}
+              value={title.value}
+              onChange={(e) => title.onChange(e.target.value)}
+              onBlur={title.onBlur}
+              onKeyDown={title.onKeyDown}
+            />
+          ) : (
+            <button type="button" ref={trigger('title')} title="Edit recipe title" className={cn(triggerClass, 'group inline-flex items-baseline gap-2')} onClick={() => openBox('title')}>
+              {recipe.title}
+              <PencilIcon aria-hidden="true" className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </button>
+          )}
+        </h2>
         <Button
           variant="ghost"
           size="icon-sm"
+          className="shrink-0"
           title="Create List"
           aria-label="Create List"
           disabled={recipe.ingredients.length === 0 || createList.isPending}
@@ -523,28 +546,6 @@ function Card({ recipe }: { recipe: Recipe }) {
           Couldn't create the list. Try again.
         </p>
       )}
-      <h2 className="border-b border-border pb-2 font-display text-2xl font-bold">
-        {editing.title ? (
-          <input
-            ref={focusAndSelect}
-            type="text"
-            aria-label="Recipe title"
-            placeholder="Recipe title"
-            autoComplete="off"
-            maxLength={MAX_TITLE}
-            className={cn(boxClass, 'font-display text-2xl font-bold')}
-            value={title.value}
-            onChange={(e) => title.onChange(e.target.value)}
-            onBlur={title.onBlur}
-            onKeyDown={title.onKeyDown}
-          />
-        ) : (
-          <button type="button" ref={trigger('title')} title="Edit recipe title" className={cn(triggerClass, 'group inline-flex items-baseline gap-2')} onClick={() => openBox('title')}>
-            {recipe.title}
-            <PencilIcon aria-hidden="true" className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-          </button>
-        )}
-      </h2>
       <Messages messages={errors.title} />
       <Messages messages={errors.card} />
       <Area title="Ingredients">
