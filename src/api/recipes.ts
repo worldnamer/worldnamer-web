@@ -68,3 +68,10 @@ export async function updateRecipe(id: string, patch: RecipePatch): Promise<Reci
   const body = (await response.json()) as { recipe: Recipe }
   return body.recipe
 }
+
+// DELETE /recipes/:id: removes the recipe and answers 204 with no body. Rejects with ApiError otherwise; a 404 means the
+// recipe is not among the user's or is already gone.
+export async function deleteRecipe(id: string): Promise<void> {
+  const response = await apiFetch(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!response.ok) throw await apiErrorFrom(response)
+}

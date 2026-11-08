@@ -548,5 +548,14 @@ export function recipesHandlers(initial: MockRecipe[] = []) {
     })
   })
 
-  return [list, show, create, update]
+  // 204 for a recipe in the list, removing it from the shared array; the same 404 as show for any other id.
+  const destroy = http.delete(`${API_BASE}/recipes/:id`, ({ request, params }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    const index = recipes.findIndex((r) => String(r.id) === params.id)
+    if (index === -1) return HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })
+    recipes.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  })
+
+  return [list, show, create, update, destroy]
 }
