@@ -11,6 +11,12 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # Honeycomb's wrapper pins the OpenTelemetry stack and requires
+    # auto-instrumentations-web ^0.65, and 0.69 fails the build; lift when
+    # Honeycomb ships support (register item worldnamer_com/65; see the
+    # version trap in LORE.md).
+    ignore:
+      - dependency-name: "@opentelemetry/auto-instrumentations-web"
     groups:
       minor-and-patch:
         update-types:
