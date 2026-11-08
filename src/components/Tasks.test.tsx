@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
@@ -12,10 +13,12 @@ import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/h
 import { server } from '@/mocks/server'
 import { Tasks } from './Tasks'
 
-function renderTasks() {
+function renderTasks(state?: unknown) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <Tasks />
+      <MemoryRouter initialEntries={[{ pathname: '/', state }]}>
+        <Tasks />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -46,6 +49,27 @@ const shopping = [
 ]
 
 describe('Tasks', () => {
+  it('selects the list named in the router state instead of the first', async () => {
+    server.use(...taskListsHandlers(shopping))
+    renderTasks({ taskListId: 9 })
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(pressed()).toEqual(['Chores'])
+  })
+
+  it('selects the first list when the router state names no list that exists, or is not an id', async () => {
+    server.use(...taskListsHandlers(shopping))
+    renderTasks({ taskListId: 77 })
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(pressed()).toEqual(['Shopping List'])
+  })
+
+  it('selects the first list when the router state is not an id', async () => {
+    server.use(...taskListsHandlers(shopping))
+    renderTasks({ taskListId: '9' })
+    await screen.findByRole('button', { name: 'Chores' })
+    expect(pressed()).toEqual(['Shopping List'])
+  })
+
   it('is a region named "Tasks" with the lists in API order', async () => {
     server.use(...taskListsHandlers(shopping))
     renderTasks()

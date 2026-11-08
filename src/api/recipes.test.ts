@@ -1,10 +1,11 @@
+import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { REFRESH_TOKEN, recipesHandlers } from '@/mocks/handlers'
+import { API_BASE, errorBody, REFRESH_TOKEN, recipesHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { ApiError } from './client'
-import { getRecipe, listRecipes, updateRecipe } from './recipes'
+import { createTaskListFromRecipe, getRecipe, listRecipes, updateRecipe } from './recipes'
 
 beforeEach(() => {
   queryClient.clear()
@@ -102,5 +103,28 @@ describe('updateRecipe', () => {
     server.use(...recipesHandlers([{ id: 1, title: 'Bread' }]))
 
     await expect(updateRecipe('9', { title: 'Rye' })).rejects.toMatchObject({ status: 404, code: 'not_found' })
+  })
+})
+
+describe('createTaskListFromRecipe', () => {
+  it('posts to the recipe with no body and resolves the new list', async () => {
+    setAccessToken(REFRESH_TOKEN)
+    let seen: { url: string; body: string } | undefined
+    server.use(
+      http.post(`${API_BASE}/recipes/:id/task_list`, async ({ request }) => {
+        seen = { url: new URL(request.url).pathname, body: await request.text() }
+        return HttpResponse.json({ task_list: { id: 9, name: 'Stew' } }, { status: 201 })
+      }),
+    )
+
+    expect(await createTaskListFromRecipe(4)).toEqual({ id: 9, name: 'Stew' })
+    expect(seen).toEqual({ url: '/api/v1/recipes/4/task_list', body: '' })
+  })
+
+  it('rejects with an ApiError carrying the status on a 404', async () => {
+    setAccessToken(REFRESH_TOKEN)
+    server.use(http.post(`${API_BASE}/recipes/:id/task_list`, () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })))
+
+    await expect(createTaskListFromRecipe(4)).rejects.toMatchObject({ status: 404 })
   })
 })
