@@ -69,7 +69,7 @@ function mockCreate(answer: () => Response) {
 }
 
 describe('the Create List button on a recipe card', () => {
-  it('is an arrow button titled Create List at the upper right, ahead of the title', async () => {
+  it('is a list-plus button titled Create List on the same row as the title, to its right', async () => {
     setSessionFlag()
     mockCreate(() => HttpResponse.json({ task_list: { id: 7, name: 'Stew' } }, { status: 201 }))
     renderApp('/recipes/1')
@@ -77,9 +77,9 @@ describe('the Create List button on a recipe card', () => {
     const create = await button()
     expect(create).toHaveAttribute('title', 'Create List')
     expect(create).toBeEnabled()
-    expect(create.parentElement).toHaveClass('flex', 'justify-end')
     const heading = screen.getByRole('heading', { name: 'Stew' })
-    expect(create.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(create.parentElement).toBe(heading.parentElement)
+    expect(heading.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('is disabled on a recipe with no ingredients, and sends nothing', async () => {
