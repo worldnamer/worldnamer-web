@@ -12,6 +12,7 @@ import { toIso } from '@/lib/isoDate'
 import { refusal } from '@/lib/refusal'
 import { accessibleListName } from '@/lib/taskListNames'
 import { isBlankText } from '@/lib/taskText'
+import { useConfirmDelete } from '@/lib/useConfirmDelete'
 
 // The selected list's tasks, oldest first. Each list's tasks are their own ['tasks', listId] query, so going back to a
 // list fetched in the last minute sends no request. Only the selected list is fetched.
@@ -40,11 +41,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
-  // One delete dialog for the whole area, not one per row. It is controlled: `open` shows it and `target` is the task
-  // it asks about. They are separate so the title keeps its text while the dialog fades out.
-  const [open, setOpen] = useState(false)
-  const [target, setTarget] = useState<Task | null>(null)
-  const opener = useRef<HTMLElement | null>(null) // the delete button that opened the dialog
+  const del = useConfirmDelete<Task>(() => plusRef.current)
   // The second dialog, for clearing every done task. It names no task, so it needs no target.
   const [clearOpen, setClearOpen] = useState(false)
   const broomRef = useRef<HTMLButtonElement>(null)
@@ -122,12 +119,6 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
     onError: () => onError("Couldn't clear the done tasks. Try again."),
   })
 
-  function askToDelete(task: Task, button: HTMLElement) {
-    opener.current = button
-    setTarget(task)
-    setOpen(true)
-  }
-
   // Resolves the text as saved, or null if it was not (the card's line says why, and the draft keeps its text).
   async function saveDraft(text: string, viaEnter: boolean) {
     const task = await create.mutateAsync({ listId: list.id, text }).catch(() => null)
@@ -156,7 +147,7 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
               currentYear={currentYear}
               today={today}
               onError={onError}
-              onAskToDelete={askToDelete}
+              onAskToDelete={del.ask}
               deleting={deletingIds.includes(task.id)}
             />
           ))}
@@ -199,15 +190,15 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
         </ul>
       )}
       <ConfirmDeleteDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={target && !isBlankText(target.text) ? `Delete '${target.text}'?` : 'Delete this task?'}
+        open={del.open}
+        onOpenChange={del.setOpen}
+        title={del.target && !isBlankText(del.target.text) ? `Delete '${del.target.text}'?` : 'Delete this task?'}
         onConfirm={() => {
-          if (target) remove.mutate({ listId: list.id, task: target })
+          if (del.target) remove.mutate({ listId: list.id, task: del.target })
         }}
         // After a confirmed delete the task's own button is going away, so focus goes to the + row; after Cancel it
         // goes back to the button that opened the dialog.
-        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
+        focusAfterClose={del.focusAfterClose}
       />
       <ConfirmDeleteDialog
         open={clearOpen}
