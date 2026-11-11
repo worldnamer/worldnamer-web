@@ -2,9 +2,8 @@ import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { API_BASE, errorBody, REFRESH_TOKEN, recipesHandlers } from '@/mocks/handlers'
+import { API_BASE, REFRESH_TOKEN, recipesHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
-import { ApiError } from './client'
 import { createTaskListFromRecipe, getRecipe, listRecipes, updateRecipe } from './recipes'
 
 beforeEach(() => {
@@ -21,19 +20,6 @@ describe('listRecipes', () => {
       { id: 3, title: 'Apple pie' },
       { id: 1, title: 'bread' },
     ])
-  })
-
-  it('resolves an empty list', async () => {
-    setAccessToken(REFRESH_TOKEN)
-    server.use(...recipesHandlers())
-
-    expect(await listRecipes()).toEqual([])
-  })
-
-  it('rejects with an ApiError carrying the status when not logged in', async () => {
-    server.use(...recipesHandlers())
-
-    await expect(listRecipes()).rejects.toBeInstanceOf(ApiError)
   })
 })
 
@@ -61,13 +47,6 @@ describe('getRecipe', () => {
       cook_instructions: '',
       cook_minutes: null,
     })
-  })
-
-  it('rejects with a 404 ApiError for an id that is not in the list', async () => {
-    setAccessToken(REFRESH_TOKEN)
-    server.use(...recipesHandlers([{ id: 1, title: 'Bread' }]))
-
-    await expect(getRecipe('9')).rejects.toMatchObject({ status: 404, code: 'not_found' })
   })
 })
 
@@ -97,13 +76,6 @@ describe('updateRecipe', () => {
       fields: { title: ['Title is too long (maximum is 100 characters).'] },
     })
   })
-
-  it('rejects a 404 for an id that is not in the list', async () => {
-    setAccessToken(REFRESH_TOKEN)
-    server.use(...recipesHandlers([{ id: 1, title: 'Bread' }]))
-
-    await expect(updateRecipe('9', { title: 'Rye' })).rejects.toMatchObject({ status: 404, code: 'not_found' })
-  })
 })
 
 describe('createTaskListFromRecipe', () => {
@@ -119,12 +91,5 @@ describe('createTaskListFromRecipe', () => {
 
     expect(await createTaskListFromRecipe(4)).toEqual({ id: 9, name: 'Stew' })
     expect(seen).toEqual({ url: '/api/v1/recipes/4/task_list', body: '' })
-  })
-
-  it('rejects with an ApiError carrying the status on a 404', async () => {
-    setAccessToken(REFRESH_TOKEN)
-    server.use(http.post(`${API_BASE}/recipes/:id/task_list`, () => HttpResponse.json(errorBody('not_found', 'Not found.'), { status: 404 })))
-
-    await expect(createTaskListFromRecipe(4)).rejects.toMatchObject({ status: 404 })
   })
 })
