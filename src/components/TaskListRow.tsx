@@ -157,74 +157,74 @@ export function TaskListRow({
   return (
     <div className="flex items-center gap-1">
       <div className="relative min-w-0 flex-1">
-      <div
-        ref={scrollerRef}
-        className="min-w-0 flex-1 cursor-grab overflow-x-auto active:cursor-grabbing [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={(event) => updateFades(event.currentTarget)}
-        onClickCapture={(event) => {
-          if (!swallowClick.current) return
-          swallowClick.current = false
-          event.preventDefault()
-          event.stopPropagation()
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
-      >
-        {/* relative, so each box's offsetLeft is measured from the start of the list. */}
-        <ul ref={listRef} aria-label="Task lists" className="relative flex w-max gap-2">
-          {lists.map((list) => {
-            const selected = list.id === selectedId
-            return (
-              <li key={list.id} className="shrink-0">
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={accessibleListName(list.name)}
-                  title={isBlank(list.name) ? undefined : list.name}
-                  className={cn(
-                    'h-8 min-w-16 max-w-56 truncate rounded-md border px-3 text-sm outline-none transition-colors',
-                    // An inset ring, so the scroller's edges do not clip it.
-                    'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
-                    selected
-                      ? 'border-brand bg-brand/15 text-foreground'
-                      : 'border-border text-muted-foreground hover:text-foreground',
-                  )}
-                  onClick={() => onSelect(list.id)}
-                >
-                  {rowName(list.name)}
-                </button>
+        <div
+          ref={scrollerRef}
+          className="cursor-grab overflow-x-auto active:cursor-grabbing [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onScroll={(event) => updateFades(event.currentTarget)}
+          onClickCapture={(event) => {
+            if (!swallowClick.current) return
+            swallowClick.current = false
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+        >
+          {/* relative, so each box's offsetLeft is measured from the start of the list. */}
+          <ul ref={listRef} aria-label="Task lists" className="relative flex w-max gap-2">
+            {lists.map((list) => {
+              const selected = list.id === selectedId
+              return (
+                <li key={list.id} className="shrink-0">
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={accessibleListName(list.name)}
+                    title={isBlank(list.name) ? undefined : list.name}
+                    className={cn(
+                      'h-8 min-w-16 max-w-56 truncate rounded-md border px-3 text-sm outline-none transition-colors',
+                      // An inset ring, so the scroller's edges do not clip it.
+                      'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
+                      selected
+                        ? 'border-brand bg-brand/15 text-foreground'
+                        : 'border-border text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => onSelect(list.id)}
+                  >
+                    {rowName(list.name)}
+                  </button>
+                </li>
+              )
+            })}
+            {drafting && (
+              <li className="shrink-0">
+                <TaskListNameInput
+                  name="New List"
+                  autoFocus
+                  className="w-48 focus-visible:ring-inset"
+                  onSave={saveDraft}
+                  onCancel={() => closeDraft(true)}
+                />
               </li>
-            )
-          })}
-          {drafting && (
-            <li className="shrink-0">
-              <TaskListNameInput
-                name="New List"
-                autoFocus
-                className="w-48 focus-visible:ring-inset"
-                onSave={saveDraft}
-                onCancel={() => closeDraft(true)}
-              />
-            </li>
-          )}
-        </ul>
-      </div>
-      {scrolledAway && (
-        <div
-          data-fade="start"
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-background to-transparent"
-        />
-      )}
-      {moreRight && (
-        <div
-          data-fade="end"
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
-        />
-      )}
+            )}
+          </ul>
+        </div>
+        {scrolledAway && (
+          <div
+            data-fade="start"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-background to-transparent"
+          />
+        )}
+        {moreRight && (
+          <div
+            data-fade="end"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
+          />
+        )}
       </div>
       <Button
         ref={plusRef}
