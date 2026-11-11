@@ -18,6 +18,11 @@ function startShowing(boxes: HTMLElement[], box: HTMLElement, width: number) {
   return boxes.find((b) => b.offsetLeft >= end - width)?.offsetLeft ?? box.offsetLeft
 }
 
+// True when the row has more lists past its right edge than are visible.
+function hasMoreRight(scroller: HTMLElement) {
+  return scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth
+}
+
 // The lists side by side on one line, one box each, in their saved order. Each box is a toggle button; aria-pressed
 // marks the selected one. A box has a minimum width, so a blank name is still an empty box to click, and a maximum
 // width; the name is cut to a fixed number of characters, with the full name in the native tooltip (title) and the
@@ -44,6 +49,32 @@ export function TaskListRow({
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
+  // Whether a fade shows at the left edge, because the row has been scrolled away from its start.
+  const [scrolledAway, setScrolledAway] = useState(false)
+  // Whether a fade shows at the right edge, because more lists lie past it.
+  const [moreRight, setMoreRight] = useState(false)
+
+  // Sets both fades from the scroller's position.
+  function updateFades(scroller: HTMLElement) {
+    setScrolledAway(scroller.scrollLeft > 0)
+    setMoreRight(hasMoreRight(scroller))
+  }
+
+  // The fades are measured when the lists change, then again on every scroll.
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (scroller) updateFades(scroller)
+  }, [lists])
+
+  // A resize changes how many lists fit, so the fades are measured again when the window is resized.
+  useEffect(() => {
+    function onResize() {
+      const scroller = scrollerRef.current
+      if (scroller) updateFades(scroller)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
   useEffect(() => {
@@ -83,9 +114,11 @@ export function TaskListRow({
 
   return (
     <div className="flex items-center gap-1">
+      <div className="relative min-w-0 flex-1">
       <div
         ref={scrollerRef}
         className="min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto motion-safe:scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={(event) => updateFades(event.currentTarget)}
       >
         {/* relative, so each box's offsetLeft is measured from the start of the list. */}
         <ul ref={listRef} aria-label="Task lists" className="relative flex w-max gap-2">
@@ -125,6 +158,21 @@ export function TaskListRow({
             </li>
           )}
         </ul>
+      </div>
+      {scrolledAway && (
+        <div
+          data-fade="start"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-background to-transparent"
+        />
+      )}
+      {moreRight && (
+        <div
+          data-fade="end"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
+        />
+      )}
       </div>
       <Button
         ref={plusRef}
