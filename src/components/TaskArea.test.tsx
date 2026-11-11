@@ -1381,6 +1381,19 @@ describe('setting a due date', () => {
     expect(await screen.findByText(byWholeText('Due Nov 1'))).toBeInTheDocument()
   })
 
+  it('sends nothing when the picker is closed with Escape', async () => {
+    const user = userEvent.setup()
+    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
+    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
+    renderTasks()
+
+    await openPicker(user)
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(picker()).not.toBeInTheDocument())
+    expect(sent).toEqual([])
+  })
+
   it('sends nothing when the day already set is clicked', async () => {
     const user = userEvent.setup()
     server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
