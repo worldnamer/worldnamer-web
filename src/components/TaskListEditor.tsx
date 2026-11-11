@@ -5,6 +5,7 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
 import { isBlank } from '@/lib/taskListNames'
+import { useConfirmDelete } from '@/lib/useConfirmDelete'
 
 // The list's name in quotes for a label, or just "list" when it is blank, so a label never shows empty quotes:
 // "Move 'Chores' up", "Move list up".
@@ -118,9 +119,7 @@ export function TaskListEditor({
   const refocusPlus = useRef(false)
   // The dialog is controlled: `open` shows it and `target` is the list it asks about. They are separate so the title
   // keeps its text while the dialog fades out.
-  const [open, setOpen] = useState(false)
-  const [target, setTarget] = useState<TaskList | null>(null)
-  const opener = useRef<HTMLElement | null>(null) // the delete button that opened the dialog
+  const del = useConfirmDelete<TaskList>(() => plusRef.current)
 
   // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
   useEffect(() => {
@@ -143,12 +142,6 @@ export function TaskListEditor({
     return list.name
   }
 
-  function askToDelete(list: TaskList, button: HTMLElement) {
-    opener.current = button
-    setTarget(list)
-    setOpen(true)
-  }
-
   // The edit button that opened the editor has gone, so focus moves to the editor itself. Not to the first name box,
   // which on a phone would open the on-screen keyboard.
   useEffect(() => {
@@ -166,7 +159,7 @@ export function TaskListEditor({
             count={lists.length}
             onRename={onRename}
             onMove={onMove}
-            onAskToDelete={askToDelete}
+            onAskToDelete={del.ask}
           />
         ))}
         {drafting && (
@@ -197,15 +190,15 @@ export function TaskListEditor({
         </Button>
       </div>
       <ConfirmDeleteDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={target && !isBlank(target.name) ? `Delete '${target.name}'?` : 'Delete this list?'}
+        open={del.open}
+        onOpenChange={del.setOpen}
+        title={del.target && !isBlank(del.target.name) ? `Delete '${del.target.name}'?` : 'Delete this list?'}
         onConfirm={() => {
-          if (target) onDelete(target)
+          if (del.target) onDelete(del.target)
         }}
         // After a confirmed delete the list's own button is going away, so focus goes to the +; after Cancel it goes
         // back to the button that opened the dialog.
-        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
+        focusAfterClose={del.focusAfterClose}
       />
     </div>
   )
