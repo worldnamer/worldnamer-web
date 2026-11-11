@@ -22,6 +22,7 @@ import {
 } from '@/lib/week'
 import { DraftRow } from '@/components/HabitsDraftRow'
 import { DayCell, type FailedBox } from '@/components/HabitsDayCell'
+import { useConfirmDelete } from '@/lib/useConfirmDelete'
 
 // The logged-in user's habits as a grid: a row per habit and a column per day of one week, Monday to Sunday. Each
 // week is its own ['habits', weekStart] query, cached by TanStack Query; logout clears the cache.
@@ -47,11 +48,8 @@ export function Habits() {
   const plusRef = useRef<HTMLButtonElement>(null)
   const [drafting, setDrafting] = useState(false)
   const refocusPlus = useRef(false)
-  // The dialog is controlled: `open` shows it and `target` is the habit it asks about. They are separate so the title
-  // keeps its text while the dialog fades out.
-  const [open, setOpen] = useState(false)
-  const [target, setTarget] = useState<Habit | null>(null)
-  const opener = useRef<HTMLElement | null>(null) // the row button that opened the dialog
+  // The extracted confirm delete hook
+  const del = useConfirmDelete<Habit>(() => plusRef.current)
   const [deletingIds, setDeletingIds] = useState<number[]>([])
   const [deleteError, setDeleteError] = useState<string | null>(null)
   // The latest box that failed to save, and its checkbox, for Dismiss to return focus to.
@@ -100,12 +98,6 @@ export function Habits() {
     setFailed(null)
     // The Dismiss button is about to go, so focus moves to the box that failed, ready to try again.
     failedInput.current?.focus()
-  }
-
-  function askToDelete(habit: Habit, button: HTMLElement) {
-    opener.current = button
-    setTarget(habit)
-    setOpen(true)
   }
 
   return (
@@ -210,7 +202,7 @@ export function Habits() {
                       className="text-muted-foreground hover:text-foreground"
                       aria-label={`Delete ${habit.name}`}
                       disabled={deletingIds.includes(habit.id)}
-                      onClick={(event) => askToDelete(habit, event.currentTarget)}
+                      onClick={(event) => del.ask(habit, event.currentTarget)}
                     >
                       Delete
                     </Button>
@@ -228,15 +220,15 @@ export function Habits() {
         )}
       </div>
       <ConfirmDeleteDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={`Delete '${target?.name}'?`}
+        open={del.open}
+        onOpenChange={del.setOpen}
+        title={`Delete '${del.target?.name}'?`}
         onConfirm={() => {
-          if (target) remove.mutate(target)
+          if (del.target) remove.mutate(del.target)
         }}
         // After a confirmed delete the row's button is going away, so focus goes to the + button; after Cancel it goes
         // back to the button that opened the dialog.
-        focusAfterClose={(confirmed) => (confirmed ? plusRef.current : opener.current)}
+        focusAfterClose={del.focusAfterClose}
       />
     </section>
   )
