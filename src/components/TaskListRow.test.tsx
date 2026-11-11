@@ -1,6 +1,6 @@
 // Tests for dragging the row of task lists sideways with the mouse. jsdom does no layout, so each test lays the boxes out by hand.
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { TaskListRow } from './TaskListRow'
 
 // Each box is 100px wide and boxes are 8px apart.
@@ -41,23 +41,6 @@ function layOut(width: number) {
 }
 
 describe('the lists row', () => {
-  beforeEach(() => {
-    Object.defineProperties(HTMLLIElement.prototype, {
-      offsetLeft: {
-        configurable: true,
-        get(this: HTMLLIElement) {
-          return Array.from(this.parentElement?.children ?? []).indexOf(this) * STEP
-        },
-      },
-      offsetWidth: { configurable: true, get: () => BOX },
-    })
-  })
-
-  afterEach(() => {
-    Reflect.deleteProperty(HTMLLIElement.prototype, 'offsetLeft')
-    Reflect.deleteProperty(HTMLLIElement.prototype, 'offsetWidth')
-  })
-
   it('scrolls the row with a mouse drag', () => {
     renderRow(lists(5))
     const scroller = layOut(250)
