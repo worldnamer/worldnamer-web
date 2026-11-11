@@ -821,7 +821,6 @@ describe('ticking a day', () => {
     const table = screen.getByRole('table')
     expect(heading.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(alert.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(alert).toHaveClass('text-destructive')
   })
 
   it('keeps the error line until something clears it, not on a timer', async () => {

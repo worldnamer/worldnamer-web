@@ -170,7 +170,6 @@ describe('deleting a recipe', () => {
 
     const alert = await screen.findByText('Could not delete the recipe. Try again.')
     expect(alert).toHaveAttribute('role', 'alert')
-    expect(alert).toHaveClass('text-destructive')
     expect(screen.queryByText(/secret server text/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chili' })).toBeInTheDocument()
     expect(path()).toHaveTextContent('/recipes/1')

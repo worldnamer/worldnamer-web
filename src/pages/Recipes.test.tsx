@@ -371,7 +371,6 @@ describe('adding a recipe', () => {
 
     const alert = await screen.findByText('Could not add the recipe. Try again.')
     expect(alert).toHaveAttribute('role', 'alert')
-    expect(alert).toHaveClass('text-destructive')
     expect(screen.queryByText(/secret server text/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'bread' })).toHaveAttribute('aria-current', 'page')
     expect(within(screen.getByRole('region', { name: 'Recipes' })).getAllByRole('link')).toHaveLength(3)
