@@ -184,7 +184,7 @@ export function Tasks() {
           {error}
         </p>
       )}
-      <div className="grid gap-2 border-b border-border py-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 border-b border-border py-2">
         {isPending && <p className="text-muted-foreground">Loading lists...</p>}
         {isError && (
           <p role="alert" className="text-destructive">
