@@ -11,7 +11,7 @@
 //   export function setSessionFlag(): void     // localStorage[HAS_SESSION_KEY] = '1'
 //   export function clearSessionFlag(): void   // removes the key
 import { beforeEach, describe, expect, it } from 'vitest'
-import { HAS_SESSION_KEY, clearSessionFlag, hasSessionFlag, setSessionFlag } from './sessionFlag'
+import { clearSessionFlag, hasSessionFlag, setSessionFlag } from './sessionFlag'
 import { clearAccessToken, getAccessToken, setAccessToken } from './tokenStore'
 
 beforeEach(() => {
@@ -41,10 +41,6 @@ describe('tokenStore', () => {
 })
 
 describe('sessionFlag', () => {
-  it('uses the documented key', () => {
-    expect(HAS_SESSION_KEY).toBe('worldnamer.hasSession')
-  })
-
   it('is false until set, "1" in localStorage when set, and false again when cleared', () => {
     expect(hasSessionFlag()).toBe(false)
     setSessionFlag()

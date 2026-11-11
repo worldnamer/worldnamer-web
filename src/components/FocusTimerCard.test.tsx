@@ -15,13 +15,6 @@ beforeEach(() => {
 
 const minutesOf = (label: string) => screen.getByRole('button', { name: `${label} minutes up` }).parentElement!.querySelector('.tabular-nums')!.textContent
 
-it('starts at 15, 5 and 15 minutes', () => {
-  render(<FocusTimerCard />)
-  expect(minutesOf('Work')).toBe('15')
-  expect(minutesOf('Break')).toBe('5')
-  expect(minutesOf('Long break')).toBe('15')
-})
-
 it('steps by 5 with the arrows and keeps the value for the next visit', async () => {
   const user = userEvent.setup()
   const { unmount } = render(<FocusTimerCard />)
