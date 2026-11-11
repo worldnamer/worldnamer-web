@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { Trash2Icon } from 'lucide-react'
 import { ApiError } from '@/api/client'
-import { createRecipe, deleteRecipe, listRecipes } from '@/api/recipes'
+import { createRecipe, deleteRecipe, listRecipes, type RecipeSummary } from '@/api/recipes'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { clearLastRecipe, forgetLastRecipe, getLastRecipe } from '@/lib/lastRecipe'
 import { revealOnHover } from '@/lib/revealOnHover'
 import { cn } from '@/lib/utils'
+import { useConfirmDelete } from '@/lib/useConfirmDelete'
 
 // The user's recipe titles, each a link to its recipe card. The selected recipe comes from the address (/recipes/:id)
 // and is marked as the current page. The titles are plain text. The Add recipe button is there in every list state: it
@@ -25,10 +26,8 @@ export function RecipeRolodex() {
   const queryClient = useQueryClient()
   const [failed, setFailed] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
-  const [open, setOpen] = useState(false)
-  const [target, setTarget] = useState<{ id: number; title: string } | null>(null)
-  const opener = useRef<HTMLElement | null>(null) // the trash button that opened the dialog
   const addRef = useRef<HTMLButtonElement>(null)
+  const del = useConfirmDelete<RecipeSummary>(() => addRef.current)
   // The recipe selected now, which may differ from the one selected when a delete was confirmed.
   const selectedId = useRef(id)
   useEffect(() => {
@@ -87,12 +86,6 @@ export function RecipeRolodex() {
     },
   })
 
-  function askToDelete(recipe: { id: number; title: string }, button: HTMLElement) {
-    opener.current = button
-    setTarget(recipe)
-    setOpen(true)
-  }
-
   return (
     <section aria-label="Recipes">
       <h2 className="border-b border-border pb-2 font-display text-lg font-bold">Recipes</h2>
@@ -124,7 +117,7 @@ export function RecipeRolodex() {
                   size="icon-sm"
                   className={cn('text-muted-foreground hover:text-foreground', revealOnHover)}
                   aria-label={`Delete ${recipe.title}`}
-                  onClick={(event) => askToDelete(recipe, event.currentTarget)}
+                  onClick={(event) => del.ask(recipe, event.currentTarget)}
                 >
                   <Trash2Icon />
                 </Button>
@@ -151,15 +144,15 @@ export function RecipeRolodex() {
         </p>
       )}
       <ConfirmDeleteDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={`Delete '${target?.title ?? ''}'?`}
+        open={del.open}
+        onOpenChange={del.setOpen}
+        title={`Delete '${del.target?.title ?? ''}'?`}
         onConfirm={() => {
-          if (target) remove.mutate(target)
+          if (del.target) remove.mutate(del.target)
         }}
         // After a confirmed delete the recipe's own button is going away, so focus goes to Add recipe; after Cancel it
         // goes back to the button that opened the dialog.
-        focusAfterClose={(confirmed) => (confirmed ? addRef.current : opener.current)}
+        focusAfterClose={del.focusAfterClose}
       />
     </section>
   )
