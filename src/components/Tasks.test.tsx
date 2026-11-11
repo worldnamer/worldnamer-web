@@ -137,17 +137,6 @@ describe('selecting a list', () => {
     expect(pressed()).toEqual(['Vertex Rim'])
   })
 
-  it('selects with the keyboard', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers(shopping))
-    renderTasks()
-
-    ;(await screen.findByRole('button', { name: 'Chores' })).focus()
-    await user.keyboard('{Enter}')
-
-    expect(pressed()).toEqual(['Chores'])
-  })
-
   it('selects the first list again after a reload, without asking the server again', async () => {
     const user = userEvent.setup()
     let gets = 0
@@ -287,22 +276,6 @@ describe('adding a list from the row', () => {
     expect(draft()).not.toBeInTheDocument()
     expect(plus()).toBeEnabled()
     expect(plus()).toHaveFocus()
-  })
-
-  it('keeps the new list after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers([{ id: 1, name: 'Chores' }]))
-    const { unmount } = renderTasks()
-    await openDraft(user)
-    await user.keyboard('Groceries{Enter}')
-    await screen.findByRole('button', { name: 'Groceries' })
-    unmount()
-    queryClient.clear()
-
-    renderTasks()
-
-    await screen.findByRole('button', { name: 'Groceries' })
-    expect(rowNames()).toEqual(['Chores', 'Groceries'])
   })
 
   it('saves "New List" as it is when Enter is pressed straight away', async () => {

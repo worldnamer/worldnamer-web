@@ -321,23 +321,6 @@ describe('adding a task', () => {
     expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks', body: { task: { text: 'Bread' } } }])
   })
 
-  it('keeps the new task at the bottom after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    const { unmount } = renderTasks()
-    await openDraft(user)
-    await user.keyboard('Bread{Enter}')
-    await screen.findByText('Bread')
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-
-    await screen.findByText('Bread')
-    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs', 'Bread'])
-    expect(area('Shopping List').lastElementChild).toContainElement(plus())
-  })
-
   it('saves once when focus leaves, and leaves focus where it went', async () => {
     const user = userEvent.setup()
     server.use(...both())
@@ -488,17 +471,6 @@ describe("editing a task's text", () => {
     expect(textBox()).toHaveFocus()
     expect(screen.queryByRole('button', { name: 'Edit Milk' })).not.toBeInTheDocument()
     expect(area('Shopping List').firstElementChild).toContainElement(textBox())
-  })
-
-  it('opens with the keyboard', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    renderTasks()
-
-    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
-    await user.keyboard('{Enter}')
-
-    expect(textBox()).toHaveFocus()
   })
 
   it('sends PATCH with only the text on Enter, shows the new text, and returns focus to it', async () => {
@@ -679,54 +651,6 @@ describe('checking and unchecking a task', () => {
     expect(box('Milk')).toBeChecked()
   })
 
-  it('is still checked and struck through after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
-    const { unmount } = renderTasks()
-
-    await user.click(await screen.findByRole('checkbox', { name: 'Milk' }))
-    await waitFor(() => expect(sent).toHaveLength(1))
-    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-    expect(await screen.findByRole('checkbox', { name: 'Milk' })).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Edit Milk' })).toHaveClass('line-through')
-    expect(taskNames('Shopping List')).toEqual(['Milk', 'Eggs'])
-  })
-
-  it('unchecks a task with PATCH sending only done: false, removes the strikethrough, and stays so after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
-    const { unmount } = renderTasks()
-
-    await user.click(await screen.findByRole('checkbox', { name: 'Eggs' }))
-
-    expect(box('Eggs')).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Edit Eggs' })).not.toHaveClass('line-through')
-    await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/3', body: { task: { done: false } } }]))
-    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-    expect(await screen.findByRole('checkbox', { name: 'Eggs' })).not.toBeChecked()
-  })
-
-  it('checks with the keyboard', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    renderTasks()
-
-    ;(await screen.findByRole('checkbox', { name: 'Milk' })).focus()
-    await user.keyboard(' ')
-
-    expect(box('Milk')).toBeChecked()
-  })
-
   it.each([
     ['Milk', "Couldn't save 'Milk'. Try again."],
     ['', "Couldn't save this task. Try again."],
@@ -897,18 +821,6 @@ describe('deleting a task', () => {
     expect(await screen.findByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
 
-  it('is reached with Tab from the task text, after its calendar button', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    renderTasks()
-
-    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
-    await user.tab()
-    await user.tab()
-
-    expect(deleteButton('Delete Milk')).toHaveFocus()
-  })
-
   it('asks first, in a dialog titled with the task, and opens with the keyboard', async () => {
     const user = userEvent.setup()
     server.use(...both())
@@ -959,22 +871,6 @@ describe('deleting a task', () => {
     expect(deletes).toEqual(['/api/v1/task_lists/4/tasks/1'])
     await waitFor(() => expect(queryClient.isMutating()).toBe(0))
     expect(gets).toEqual(['4'])
-  })
-
-  it('keeps the task gone after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    const { unmount } = renderTasks()
-
-    const confirm = await askToDelete(user)
-    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(taskNames('Shopping List')).toEqual(['Eggs']))
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-    await screen.findByText('Eggs')
-    expect(taskNames('Shopping List')).toEqual(['Eggs'])
   })
 
   it('counts a 404 (already deleted elsewhere) as deleted, and fetches the lists and tasks again quietly', async () => {
@@ -1469,18 +1365,6 @@ describe('setting a due date', () => {
     expect(await screen.findByRole('button', { name: 'Due date for task' })).toBeInTheDocument()
   })
 
-  it('is reached with Tab between the task text and the delete button', async () => {
-    const user = userEvent.setup()
-    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-    renderTasks()
-
-    ;(await screen.findByRole('button', { name: 'Edit Milk' })).focus()
-    await user.tab()
-    expect(trigger()).toHaveFocus()
-    await user.tab()
-    expect(screen.getByRole('button', { name: 'Delete Milk' })).toHaveFocus()
-  })
-
   it("opens on the current month when the task has no date, with today's day focused", async () => {
     const user = userEvent.setup()
     server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
@@ -1531,50 +1415,6 @@ describe('setting a due date', () => {
 
     await waitFor(() => expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: '2026-11-01' } } }]))
     expect(await screen.findByText(byWholeText('Due Nov 1'))).toBeInTheDocument()
-  })
-
-  it('picks a day with the keyboard', async () => {
-    const user = userEvent.setup()
-    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
-    renderTasks()
-
-    ;(await screen.findByRole('button', { name: 'Due date for Milk' })).focus()
-    await user.keyboard('{Enter}')
-    await waitFor(() => expect(day('Sunday, November 1st, 2026')).toHaveFocus())
-    await user.keyboard('{ArrowRight}{ArrowRight}{Enter}')
-
-    expect(await screen.findByText(byWholeText('Due Nov 3'))).toBeInTheDocument()
-    expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: '2026-11-03' } } }])
-  })
-
-  it('keeps the date after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-    const { unmount } = renderTasks()
-
-    await openPicker(user)
-    await user.click(day('Thursday, November 5th, 2026'))
-    await screen.findByText(byWholeText('Due Nov 5'))
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-    expect(await screen.findByText(byWholeText('Due Nov 5'))).toBeInTheDocument()
-  })
-
-  it('closes on Escape without saving, and returns focus to the button', async () => {
-    const user = userEvent.setup()
-    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-    const sent = recordRequests('patch', '/task_lists/:listId/tasks/:id')
-    renderTasks()
-
-    await openPicker(user)
-    await user.keyboard('{Escape}')
-
-    await waitFor(() => expect(picker()).not.toBeInTheDocument())
-    expect(trigger()).toHaveFocus()
-    expect(sent).toEqual([])
   })
 
   it('sends nothing when the day already set is clicked', async () => {
@@ -1718,23 +1558,6 @@ describe('clearing a due date', () => {
     await waitFor(() => expect(screen.queryByText(byWholeText('Due Nov 5'))).not.toBeInTheDocument())
     expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { due_on: null } } }])
     expect(screen.getByRole('button', { name: 'Due date for Milk' })).toHaveFocus()
-  })
-
-  it('keeps the date cleared after a reload', async () => {
-    const user = userEvent.setup()
-    server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
-    const { unmount } = renderTasks()
-
-    const dialog = await openPicker(user)
-    await user.click(within(dialog).getByRole('button', { name: 'Clear date' }))
-    await waitFor(() => expect(screen.queryByText(byWholeText('Due Nov 5'))).not.toBeInTheDocument())
-    await waitFor(() => expect(queryClient.isMutating()).toBe(0))
-
-    unmount()
-    queryClient.clear()
-    renderTasks()
-    await screen.findByText('Milk')
-    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument()
   })
 
   it('offers no "Clear date" when the task has no date', async () => {

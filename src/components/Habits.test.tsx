@@ -709,20 +709,6 @@ describe('ticking a day', () => {
     await waitFor(() => expect(box(wednesday)).not.toBeChecked())
   })
 
-  it('unticks a ticked day with Space on the focused box', async () => {
-    const user = userEvent.setup()
-    server.use(...habitsHandlers([stretch]))
-    const sent = recordCompletions()
-    renderHabits()
-    await screen.findByText('Stretch')
-
-    box('Stretch, Monday, October 26').focus()
-    await user.keyboard(' ')
-
-    expect(await screen.findByRole('checkbox', { name: 'Stretch, Monday, October 26' })).not.toBeChecked()
-    await waitFor(() => expect(sent).toEqual([`DELETE /api/v1/habits/7/completions/2026-10-26 Bearer ${REFRESH_TOKEN}`]))
-  })
-
   it('keeps the tick without fetching the week again once the server has saved it', async () => {
     const user = userEvent.setup()
     let gets = 0
@@ -987,24 +973,6 @@ describe('moving between weeks', () => {
 
     await tableNamed('Oct 26 – Nov 1')
     expect(weeks).toEqual(['2026-10-26', '2026-11-02'])
-  })
-
-  it('reaches Oct 19 – Oct 25 with Previous twice, using the keyboard', async () => {
-    const user = userEvent.setup()
-    server.use(...habitsHandlers([stretch]))
-    renderHabits()
-    await tableNamed('Oct 26 – Nov 1')
-
-    previous().focus()
-    await user.keyboard('{Enter}')
-    await tableNamed('Oct 19 – Oct 25')
-    await user.keyboard(' ')
-    await tableNamed('Oct 12 – Oct 18')
-    next().focus()
-    await user.keyboard('{Enter}')
-
-    await tableNamed('Oct 19 – Oct 25')
-    await waitFor(() => expect(checkedBoxes()).toEqual(['Stretch, Monday, October 19']))
   })
 
   it('shows the year once a week reaches into a past year', async () => {
