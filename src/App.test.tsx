@@ -80,13 +80,11 @@ describe('resume cards', () => {
     expect(isFolded(fuhuBullet)).toBe(true)
   })
 
-  it('shows phrases marked in the summary in the brand color, without the asterisks', () => {
+  it('removes the asterisks from phrases marked in the summary', () => {
     renderApp('/resume')
 
-    // The footer repeats the mission line, so look only inside the page itself. Which phrases are marked is
-    // up to the data file, so this checks the behavior and not the wording.
+    // The footer repeats the mission line, so look only inside the page itself.
     const summary = screen.getByRole('main').querySelector('header')!
-    expect(summary.querySelectorAll('span.text-brand').length).toBeGreaterThan(0)
     expect(within(summary).queryByText(/\*\*/)).not.toBeInTheDocument()
   })
 

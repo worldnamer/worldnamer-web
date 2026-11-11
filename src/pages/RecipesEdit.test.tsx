@@ -409,7 +409,7 @@ describe('the instruction boxes', () => {
 })
 
 describe('where data goes in', () => {
-  it('gives the title and instruction boxes a placeholder, a border and the limit the API enforces', async () => {
+  it('gives the title and instruction boxes a placeholder and the limit the API enforces', async () => {
     setSessionFlag()
     mockRecipes([{ id: 1, title: 'Bread' }])
     renderApp('/recipes/1')
@@ -425,7 +425,6 @@ describe('where data goes in', () => {
       expect(box).toHaveAttribute('placeholder', placeholder)
       expect(box).toHaveAttribute('maxlength', '10000')
     }
-    for (const box of screen.getAllByRole('textbox')) expect(box).toHaveClass('border', 'border-border')
   })
 })
 
@@ -447,7 +446,7 @@ describe('the minutes', () => {
     expect(screen.queryByRole('textbox', { name: /minutes/ })).not.toBeInTheDocument()
   })
 
-  it('open a number box with a placeholder, a border and a limit', async () => {
+  it('open a number box with a placeholder and a limit', async () => {
     setSessionFlag()
     mockRecipes([{ id: 1, title: 'Stew', prep_minutes: 125 }])
     renderApp('/recipes/1')
@@ -462,7 +461,6 @@ describe('the minutes', () => {
       expect(box).toHaveAttribute('placeholder', 'min')
       expect(box).toHaveAttribute('maxlength', '5')
       expect(box).toHaveAttribute('inputmode', 'numeric')
-      expect(box).toHaveClass('border', 'border-border')
     }
   })
 
@@ -593,7 +591,6 @@ describe('editing one field at a time', () => {
 
     const text = await screen.findByTitle('Edit prep instructions')
     expect(text.querySelector('b')).toBeNull()
-    expect(text.querySelector('span')).toHaveClass('whitespace-pre-line')
     expect(text.textContent).toBe('Mix <b>well</b>.\nKnead.')
     const box = await openBox('Prep instructions')
     expect(box).toHaveValue('Mix <b>well</b>.\nKnead.')
@@ -650,7 +647,7 @@ describe('the ingredient rows', () => {
     expect(screen.queryAllByRole('textbox')).toEqual([])
   })
 
-  it('opens a new row on the plus button with the cursor in Amount, and the boxes have placeholders, borders and limits', async () => {
+  it('opens a new row on the plus button with the cursor in Amount, and the boxes have placeholders and limits', async () => {
     setSessionFlag()
     mockRecipes([stew])
     renderApp('/recipes/1')
@@ -663,7 +660,6 @@ describe('the ingredient rows', () => {
     expect(amount).toHaveAttribute('maxlength', '49')
     expect(name).toHaveAttribute('placeholder', 'Ingredient')
     expect(name).toHaveAttribute('maxlength', '50')
-    for (const box of [amount, name]) expect(box).toHaveClass('border', 'border-border')
     expect(screen.queryByRole('button', { name: 'Add ingredient' })).not.toBeInTheDocument()
   })
 

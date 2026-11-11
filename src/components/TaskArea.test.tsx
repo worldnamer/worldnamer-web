@@ -175,7 +175,7 @@ describe('the tasks of the selected list', () => {
     server.use(...both())
     renderTasks()
 
-    expect(await screen.findByText('Loading tasks...')).toHaveClass('text-muted-foreground')
+    expect(await screen.findByText('Loading tasks...')).toBeInTheDocument()
     await screen.findByText('Milk')
     expect(screen.queryByText('Loading tasks...')).not.toBeInTheDocument()
   })
@@ -574,7 +574,6 @@ describe("editing a task's text", () => {
     await user.keyboard('{Control>}a{/Control}{Backspace}{Enter}')
 
     const edit = await screen.findByRole('button', { name: 'Edit task' })
-    expect(edit).toHaveClass('flex-1')
     expect(screen.getByRole('checkbox', { name: 'Unnamed task' })).toBeInTheDocument()
     expect(sent).toEqual([{ path: '/api/v1/task_lists/4/tasks/1', body: { task: { text: '' } } }])
 

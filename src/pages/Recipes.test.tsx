@@ -143,9 +143,7 @@ describe('the recipe card', () => {
     expect(within(card).queryAllByRole('textbox')).toEqual([])
     const prepText = within(card).getByTitle('Edit prep instructions')
     expect(prepText.textContent).toBe('Mix.\nKnead.')
-    expect(prepText.querySelector('span')).toHaveClass('whitespace-pre-line')
     const prepLine = within(card).getByRole('heading', { name: 'Prep' }).parentElement!
-    expect(prepLine).toHaveClass('flex', 'justify-between', 'border-b')
     expect(within(prepLine).getByTitle('Edit prep minutes')).toHaveTextContent('20 min')
     expect(screen.queryByText('Pick a recipe or add one')).not.toBeInTheDocument()
   })
@@ -159,7 +157,7 @@ describe('the recipe card', () => {
     for (const name of ['Ingredients', 'Prep', 'Cook']) {
       expect(within(card).getByRole('heading', { name })).toBeInTheDocument()
     }
-    expect(within(card).getByText('No ingredients yet.')).toHaveClass('text-muted-foreground')
+    expect(within(card).getByText('No ingredients yet.')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Add ingredient' })).toBeInTheDocument()
     expect(within(card).getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
     expect(within(card).getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')

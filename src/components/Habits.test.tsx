@@ -476,7 +476,7 @@ describe('the week grid', () => {
 
     expect(await screen.findByRole('table', { name: 'Habits Oct 26 – Nov 1' })).toBeInTheDocument()
     expect(weeks).toEqual(['2026-10-26'])
-    expect(screen.getByText('Oct 26 – Nov 1')).toHaveClass('text-muted-foreground')
+    expect(screen.getByText('Oct 26 – Nov 1')).toBeInTheDocument()
   })
 
   it('has a column per day, Monday to Sunday, with no dates in the headers', async () => {

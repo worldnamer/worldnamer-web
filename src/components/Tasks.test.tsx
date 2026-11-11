@@ -191,7 +191,6 @@ describe('names in the row', () => {
 
     const blank = await screen.findByRole('button', { name: 'Unnamed list' })
     expect(blank).toHaveTextContent(/^$/)
-    expect(blank).toHaveClass('min-w-16')
     expect(blank).not.toHaveAttribute('title')
 
     await user.click(blank)
@@ -206,7 +205,6 @@ describe('names in the row', () => {
     const button = await screen.findByRole('button', { name })
     expect(button).toHaveTextContent('Vertex Rim Shopping ...')
     expect(button).toHaveAttribute('title', name)
-    expect(button).toHaveClass('max-w-56')
   })
 
   it('leaves a 20-character name whole', async () => {

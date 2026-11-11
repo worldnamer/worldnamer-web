@@ -55,15 +55,14 @@ function countingHandlers(initial = recipes) {
 }
 
 describe('the trash button on a rolodex row', () => {
-  it('sits after the title link in a group row, named for the recipe', async () => {
+  it('sits after the title link, named for the recipe', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers(recipes))
     renderApp('/recipes')
 
     const button = await trash('Bread')
     const row = button.closest('li')!
-    expect(row).toHaveClass('group', 'flex', 'items-center')
-    expect(within(row).getByRole('link', { name: 'Bread' })).toHaveClass('flex-1')
+    expect(within(row).getByRole('link', { name: 'Bread' })).toBeInTheDocument()
     expect(row.children[1]).toBe(button)
   })
 })

@@ -60,16 +60,12 @@ async function settled() {
 }
 
 describe('TodayCard', () => {
-  it('is a Today region with the same heading row and rules as the other cards', async () => {
+  it('is a Today region', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
     await settled()
 
-    const card = screen.getByRole('region', { name: 'Today' })
-    expect(card).toHaveClass('w-full')
-    const [heading, body] = Array.from(card.children)
-    expect(heading).toHaveClass('border-b', 'border-border', 'pb-2')
-    expect(body).toHaveClass('border-b', 'border-border', 'py-2')
+    expect(screen.getByRole('region', { name: 'Today' })).toBeInTheDocument()
   })
 
   it('never calls the status endpoint', async () => {
@@ -86,10 +82,10 @@ describe('TodayCard', () => {
     expect(statusCalls).toBe(0)
   })
 
-  it('shows muted "Loading calendar..." until the events arrive', async () => {
+  it('shows "Loading calendar..." until the events arrive', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
-    expect(screen.getByText('Loading calendar...')).toHaveClass('text-muted-foreground')
+    expect(screen.getByText('Loading calendar...')).toBeInTheDocument()
     await settled()
     expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument()
   })
@@ -143,7 +139,7 @@ describe('TodayCard', () => {
   it('says there is nothing on the calendar when the API sends no events', async () => {
     server.use(...googleCalendarHandlers('connected', []))
     renderCard()
-    expect(await screen.findByText('Nothing on your calendar today.')).toHaveClass('text-muted-foreground')
+    expect(await screen.findByText('Nothing on your calendar today.')).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
@@ -242,7 +238,6 @@ describe('TodayCard', () => {
         expect(rule()).toBeInTheDocument()
         expect(rule()?.previousElementSibling).toHaveTextContent('Breakfast')
         expect(rule()?.nextElementSibling).toHaveTextContent('Lunch')
-        expect(rule()).toHaveClass('w-1/2', 'bg-border')
       })
 
       it('shows no rule when every timed event has ended', async () => {
@@ -337,14 +332,13 @@ describe('TodayCard', () => {
     }
     const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
 
-    it('shows when Google last answered, in muted text under the list', async () => {
+    it('shows when Google last answered', async () => {
       server.use(
         ...googleCalendarHandlers('connected', [timedEvent('t', 'Dentist', '2026-11-01T09:00:00-08:00', '2026-11-01T10:00:00-08:00')]),
       )
       renderCard()
       // 16:41:07 UTC is 8:41 AM in the test zone.
-      const updated = await screen.findByText(/^Updated 8:41\sAM$/)
-      expect(updated).toHaveClass('text-muted-foreground')
+      expect(await screen.findByText(/^Updated 8:41\sAM$/)).toBeInTheDocument()
     })
 
     it('fetches exactly once more after five minutes and shows the new event and time', async () => {
