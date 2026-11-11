@@ -21,8 +21,9 @@ import {
   weekDays,
 } from '@/lib/week'
 import { DraftRow } from '@/components/HabitsDraftRow'
-import { DayCell, type FailedBox } from '@/components/HabitsDayCell'
+import { DayCell } from '@/components/HabitsDayCell'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { useFailedTick } from '@/lib/useFailedTick'
 
 // The logged-in user's habits as a grid: a row per habit and a column per day of one week, Monday to Sunday. Each
 // week is its own ['habits', weekStart] query, cached by TanStack Query; logout clears the cache.
@@ -52,9 +53,7 @@ export function Habits() {
   const del = useConfirmDelete<Habit>(() => plusRef.current)
   const [deletingIds, setDeletingIds] = useState<number[]>([])
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  // The latest box that failed to save, and its checkbox, for Dismiss to return focus to.
-  const [failed, setFailed] = useState<FailedBox | null>(null)
-  const failedInput = useRef<HTMLInputElement | null>(null)
+  const failedTick = useFailedTick()
 
   const remove = useMutation({
     mutationFn: (habit: Habit) => deleteHabit(habit.id),
@@ -85,19 +84,8 @@ export function Habits() {
   }
 
   function moveWeek(weeks: number) {
-    setFailed(null)
+    failedTick.setFailed(null)
     setWeekStart((start) => addWeeks(start, weeks))
-  }
-
-  function recordFailure(box: FailedBox, input: HTMLInputElement | null) {
-    failedInput.current = input
-    setFailed(box)
-  }
-
-  function dismissFailure() {
-    setFailed(null)
-    // The Dismiss button is about to go, so focus moves to the box that failed, ready to try again.
-    failedInput.current?.focus()
   }
 
   return (
@@ -129,12 +117,12 @@ export function Habits() {
           </Button>
         </div>
       </div>
-      {failed !== null && (
+      {failedTick.failed !== null && (
         <div className="flex items-center justify-between gap-3 pt-2">
           <p role="alert" className="text-sm text-destructive">
-            Couldn't save {failed.name}, {formatDayShort(failed.date)}. Try again.
+            Couldn't save {failedTick.failed.name}, {formatDayShort(failedTick.failed.date)}. Try again.
           </p>
-          <Button variant="ghost" size="sm" onClick={dismissFailure}>
+          <Button variant="ghost" size="sm" onClick={failedTick.dismissFailure}>
             Dismiss
           </Button>
         </div>
@@ -189,10 +177,10 @@ export function Habits() {
                       date={day}
                       weekStart={weekStart}
                       isToday={day === todayIso}
-                      failed={failed?.habitId === habit.id && failed.date === day}
+                      failed={failedTick.failed?.habitId === habit.id && failedTick.failed.date === day}
                       disabled={isPlaceholderData}
-                      onToggleStart={() => setFailed(null)}
-                      onToggleFail={recordFailure}
+                      onToggleStart={() => failedTick.setFailed(null)}
+                      onToggleFail={failedTick.recordFailure}
                     />
                   ))}
                   <td className="py-1 text-right">
