@@ -1,7 +1,7 @@
 // Tests for the row of task lists: the fades at its edges that show more lists lie past them, and dragging the row
 // sideways with the mouse. jsdom does no layout, so each test lays the boxes out by hand.
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { TaskListRow } from './TaskListRow'
 
 // Each box is 100px wide and boxes are 8px apart.
@@ -137,5 +137,79 @@ describe('the lists row', () => {
     const area = scroller.parentElement!
     expect(area.contains(addButton)).toBe(false)
     expect(area.nextElementSibling).toBe(addButton)
+  })
+
+  it('scrolls the row with a mouse drag', () => {
+    renderRow(lists(5))
+    const scroller = layOut(250)
+    Object.assign(scroller, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() })
+
+    fireEvent.pointerDown(scroller, { clientX: 200, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(scroller, { clientX: 150, pointerType: 'mouse' })
+
+    expect(scroller.scrollLeft).toBe(50)
+  })
+
+  it('leaves touch and pen pointers to the browser', () => {
+    renderRow(lists(5))
+    const scroller = layOut(250)
+    Object.assign(scroller, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() })
+
+    for (const pointerType of ['touch', 'pen']) {
+      fireEvent.pointerDown(scroller, { clientX: 200, pointerType, button: 0 })
+      fireEvent.pointerMove(scroller, { clientX: 150, pointerType })
+
+      expect(scroller.scrollLeft).toBe(0)
+    }
+  })
+
+  it('still selects a list when the press barely moves', () => {
+    const onSelect = vi.fn()
+    renderRow(lists(5), onSelect)
+    const scroller = layOut(250)
+    Object.assign(scroller, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() })
+
+    fireEvent.pointerDown(scroller, { clientX: 200, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(scroller, { clientX: 198, pointerType: 'mouse' })
+    fireEvent.pointerUp(scroller, { clientX: 198, pointerType: 'mouse' })
+    fireEvent.click(screen.getByRole('button', { name: 'List 2' }))
+
+    expect(onSelect).toHaveBeenCalledWith(2)
+  })
+
+  it('does not select a list after a drag', () => {
+    const onSelect = vi.fn()
+    renderRow(lists(5), onSelect)
+    const scroller = layOut(250)
+    Object.assign(scroller, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() })
+
+    fireEvent.pointerDown(scroller, { clientX: 200, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(scroller, { clientX: 170, pointerType: 'mouse' })
+    fireEvent.pointerUp(scroller, { clientX: 170, pointerType: 'mouse' })
+    fireEvent.click(screen.getByRole('button', { name: 'List 2' }))
+
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('stops dragging on release and starts clean on the next press', () => {
+    const onSelect = vi.fn()
+    renderRow(lists(5), onSelect)
+    const scroller = layOut(250)
+    Object.assign(scroller, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() })
+
+    fireEvent.pointerDown(scroller, { clientX: 200, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(scroller, { clientX: 170, pointerType: 'mouse' })
+    fireEvent.pointerUp(scroller, { clientX: 170, pointerType: 'mouse' })
+    const afterRelease = scroller.scrollLeft
+
+    fireEvent.pointerMove(scroller, { clientX: 100, pointerType: 'mouse' })
+    expect(scroller.scrollLeft).toBe(afterRelease)
+
+    fireEvent.pointerDown(scroller, { clientX: 200, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(scroller, { clientX: 199, pointerType: 'mouse' })
+    fireEvent.pointerUp(scroller, { clientX: 199, pointerType: 'mouse' })
+    fireEvent.click(screen.getByRole('button', { name: 'List 3' }))
+
+    expect(onSelect).toHaveBeenCalledWith(3)
   })
 })

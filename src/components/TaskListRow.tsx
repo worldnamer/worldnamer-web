@@ -1,5 +1,5 @@
 import { PlusIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import type { TaskList } from '@/api/taskLists'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ function boxesOf(list: HTMLUListElement | null) {
 }
 
 // The scroll position that shows `box` whole with as much as possible before it: the start of the first box from which
-// `box` still fits. Every box start is a snap point, so the row comes to rest there.
+// `box` still fits.
 function startShowing(boxes: HTMLElement[], box: HTMLElement, width: number) {
   const end = box.offsetLeft + box.offsetWidth
   return boxes.find((b) => b.offsetLeft >= end - width)?.offsetLeft ?? box.offsetLeft
@@ -28,8 +28,8 @@ function hasMoreRight(scroller: HTMLElement) {
 // width; the name is cut to a fixed number of characters, with the full name in the native tooltip (title) and the
 // accessible name.
 //
-// When the boxes do not fit, the row scrolls sideways with no visible scrollbar, snapping to whole boxes, by touch or
-// trackpad.
+// When the boxes do not fit, the row scrolls sideways with no visible scrollbar, by touch, by trackpad, or by dragging
+// with the mouse.
 //
 // The + after the row opens a box at the end of it holding "New List", selected so typing replaces it. `onAdd` saves
 // it and resolves the new list, or null if that failed (the card shows why).
@@ -112,20 +112,72 @@ export function TaskListRow({
     }
   }, [selectedId])
 
+  // Set when a press became a drag. The click that the browser fires on release would select a list, so the next click
+  // on the row is swallowed instead. Any new press clears it.
+  const swallowClick = useRef(false)
+
+  // The press that may become a drag: the pointer, where it went down, and the row's position then. captured is set
+  // once the pointer has moved far enough to count as a drag and has been captured by the row.
+  const press = useRef<{ pointerId: number; startX: number; startScrollLeft: number; captured: boolean } | null>(null)
+
+  // Touch and pen already scroll the row natively, so only a primary mouse press starts a drag here.
+  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    swallowClick.current = false
+    if (event.pointerType !== 'mouse' || event.button !== 0) return
+    press.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      captured: false,
+    }
+  }
+
+  // A small movement is a click, not a drag, so the row only starts to follow the pointer past a few pixels.
+  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const current = press.current
+    if (!current) return
+    const scroller = event.currentTarget
+    const moved = event.clientX - current.startX
+    if (!current.captured) {
+      if (Math.abs(moved) <= 5) return
+      scroller.setPointerCapture(current.pointerId)
+      current.captured = true
+      swallowClick.current = true
+    }
+    scroller.scrollLeft = current.startScrollLeft - moved
+  }
+
+  // Ends the press on release or cancel, letting go of the pointer if the row had captured it.
+  function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
+    const current = press.current
+    press.current = null
+    if (current?.captured) event.currentTarget.releasePointerCapture(current.pointerId)
+  }
+
   return (
     <div className="flex items-center gap-1">
       <div className="relative min-w-0 flex-1">
       <div
         ref={scrollerRef}
-        className="min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto motion-safe:scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="min-w-0 flex-1 cursor-grab overflow-x-auto active:cursor-grabbing [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => updateFades(event.currentTarget)}
+        onClickCapture={(event) => {
+          if (!swallowClick.current) return
+          swallowClick.current = false
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
       >
         {/* relative, so each box's offsetLeft is measured from the start of the list. */}
         <ul ref={listRef} aria-label="Task lists" className="relative flex w-max gap-2">
           {lists.map((list) => {
             const selected = list.id === selectedId
             return (
-              <li key={list.id} className="shrink-0 snap-start">
+              <li key={list.id} className="shrink-0">
                 <button
                   type="button"
                   aria-pressed={selected}
@@ -147,7 +199,7 @@ export function TaskListRow({
             )
           })}
           {drafting && (
-            <li className="shrink-0 snap-start">
+            <li className="shrink-0">
               <TaskListNameInput
                 name="New List"
                 autoFocus
