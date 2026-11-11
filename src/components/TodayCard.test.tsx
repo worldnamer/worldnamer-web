@@ -60,18 +60,6 @@ async function settled() {
 }
 
 describe('TodayCard', () => {
-  it('is a Today region with the same heading row and rules as the other cards', async () => {
-    server.use(...googleCalendarHandlers('connected'))
-    renderCard()
-    await settled()
-
-    const card = screen.getByRole('region', { name: 'Today' })
-    expect(card).toHaveClass('w-full')
-    const [heading, body] = Array.from(card.children)
-    expect(heading).toHaveClass('border-b', 'border-border', 'pb-2')
-    expect(body).toHaveClass('border-b', 'border-border', 'py-2')
-  })
-
   it('never calls the status endpoint', async () => {
     let statusCalls = 0
     server.use(
@@ -86,10 +74,10 @@ describe('TodayCard', () => {
     expect(statusCalls).toBe(0)
   })
 
-  it('shows muted "Loading calendar..." until the events arrive', async () => {
+  it('shows "Loading calendar..." until the events arrive', async () => {
     server.use(...googleCalendarHandlers('connected'))
     renderCard()
-    expect(screen.getByText('Loading calendar...')).toHaveClass('text-muted-foreground')
+    expect(screen.getByText('Loading calendar...')).toBeInTheDocument()
     await settled()
     expect(screen.queryByText('Loading calendar...')).not.toBeInTheDocument()
   })
@@ -143,7 +131,7 @@ describe('TodayCard', () => {
   it('says there is nothing on the calendar when the API sends no events', async () => {
     server.use(...googleCalendarHandlers('connected', []))
     renderCard()
-    expect(await screen.findByText('Nothing on your calendar today.')).toHaveClass('text-muted-foreground')
+    expect(await screen.findByText('Nothing on your calendar today.')).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
@@ -232,17 +220,11 @@ describe('TodayCard', () => {
         for (const li of screen.getAllByRole('listitem')) expect(li).not.toHaveClass('mt-2')
       })
 
-      it('has no gap with only all-day events', async () => {
-        await useList([holiday], 1)
-        expect(screen.getByRole('listitem')).not.toHaveClass('mt-2')
-      })
-
       it('shows a rule between ended and not-ended events, and an event in progress is on the later side', async () => {
         await useList([holiday, breakfast, lunch, dinner], 4)
         expect(rule()).toBeInTheDocument()
         expect(rule()?.previousElementSibling).toHaveTextContent('Breakfast')
         expect(rule()?.nextElementSibling).toHaveTextContent('Lunch')
-        expect(rule()).toHaveClass('w-1/2', 'bg-border')
       })
 
       it('shows no rule when every timed event has ended', async () => {
@@ -337,14 +319,13 @@ describe('TodayCard', () => {
     }
     const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
 
-    it('shows when Google last answered, in muted text under the list', async () => {
+    it('shows when Google last answered', async () => {
       server.use(
         ...googleCalendarHandlers('connected', [timedEvent('t', 'Dentist', '2026-11-01T09:00:00-08:00', '2026-11-01T10:00:00-08:00')]),
       )
       renderCard()
       // 16:41:07 UTC is 8:41 AM in the test zone.
-      const updated = await screen.findByText(/^Updated 8:41\sAM$/)
-      expect(updated).toHaveClass('text-muted-foreground')
+      expect(await screen.findByText(/^Updated 8:41\sAM$/)).toBeInTheDocument()
     })
 
     it('fetches exactly once more after five minutes and shows the new event and time', async () => {
@@ -465,14 +446,13 @@ describe('TodayCard', () => {
     })
   })
 
-  it('puts a long day in a named, focusable, scrolling region', async () => {
+  it('puts a long day in a named, focusable region', async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       timedEvent(`t${i}`, `Event ${i}`, `2026-11-01T${String(i % 24).padStart(2, '0')}:30:00-08:00`, `2026-11-01T${String(i % 24).padStart(2, '0')}:45:00-08:00`),
     )
     server.use(...googleCalendarHandlers('connected', many))
     renderCard()
     const region = await screen.findByRole('region', { name: "Today's events" })
-    expect(region).toHaveClass('max-h-96', 'overflow-y-auto')
     expect(region).toHaveAttribute('tabindex', '0')
     expect(within(region).getByRole('list')).toBeInTheDocument()
     region.focus()

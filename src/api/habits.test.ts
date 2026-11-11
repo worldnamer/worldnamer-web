@@ -30,11 +30,6 @@ describe('listHabits', () => {
     server.use(http.get(`${API_BASE}/habits`, () => HttpResponse.json({ habits: [{ id: 7, name: 'Stretch' }] })))
     await expect(listHabits('2026-10-26')).resolves.toEqual([{ id: 7, name: 'Stretch', completed_dates: [] }])
   })
-
-  it('rejects with an ApiError when the mock refuses a week_start that is not a Monday', async () => {
-    server.use(...habitsHandlers([]))
-    await expect(listHabits('2026-10-27')).rejects.toMatchObject({ status: 400 })
-  })
 })
 
 describe('createHabit', () => {

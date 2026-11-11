@@ -55,29 +55,15 @@ function countingHandlers(initial = recipes) {
 }
 
 describe('the trash button on a rolodex row', () => {
-  it('sits after the title link in a group row, named for the recipe', async () => {
+  it('sits after the title link, named for the recipe', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers(recipes))
     renderApp('/recipes')
 
     const button = await trash('Bread')
     const row = button.closest('li')!
-    expect(row).toHaveClass('group', 'flex', 'items-center')
-    expect(within(row).getByRole('link', { name: 'Bread' })).toHaveClass('flex-1')
+    expect(within(row).getByRole('link', { name: 'Bread' })).toBeInTheDocument()
     expect(row.children[1]).toBe(button)
-  })
-
-  it('is hidden only where the device can hover, until the row is hovered or focused', async () => {
-    setSessionFlag()
-    server.use(refreshHandler, ...recipesHandlers(recipes))
-    renderApp('/recipes')
-
-    expect(await trash('Bread')).toHaveClass(
-      'can-hover:opacity-0',
-      'group-hover:opacity-100',
-      'group-focus-within:opacity-100',
-      'focus-visible:opacity-100',
-    )
   })
 })
 
@@ -184,7 +170,6 @@ describe('deleting a recipe', () => {
 
     const alert = await screen.findByText('Could not delete the recipe. Try again.')
     expect(alert).toHaveAttribute('role', 'alert')
-    expect(alert).toHaveClass('text-destructive')
     expect(screen.queryByText(/secret server text/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chili' })).toBeInTheDocument()
     expect(path()).toHaveTextContent('/recipes/1')

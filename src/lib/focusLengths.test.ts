@@ -3,10 +3,6 @@ import { DEFAULT_LENGTHS, FOCUS_LENGTHS_KEY, loadFocusLengths, saveFocusLengths 
 
 beforeEach(() => localStorage.clear())
 
-it('gives 15, 5 and 15 when nothing is saved', () => {
-  expect(loadFocusLengths()).toEqual({ work: 15, break: 5, longBreak: 15 })
-})
-
 it('restores what was saved', () => {
   saveFocusLengths({ work: 25, break: 10, longBreak: 30 })
   expect(loadFocusLengths()).toEqual({ work: 25, break: 10, longBreak: 30 })

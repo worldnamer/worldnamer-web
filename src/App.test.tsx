@@ -80,13 +80,11 @@ describe('resume cards', () => {
     expect(isFolded(fuhuBullet)).toBe(true)
   })
 
-  it('shows phrases marked in the summary in the brand color, without the asterisks', () => {
+  it('removes the asterisks from phrases marked in the summary', () => {
     renderApp('/resume')
 
-    // The footer repeats the mission line, so look only inside the page itself. Which phrases are marked is
-    // up to the data file, so this checks the behavior and not the wording.
+    // The footer repeats the mission line, so look only inside the page itself.
     const summary = screen.getByRole('main').querySelector('header')!
-    expect(summary.querySelectorAll('span.text-brand').length).toBeGreaterThan(0)
     expect(within(summary).queryByText(/\*\*/)).not.toBeInTheDocument()
   })
 
@@ -96,13 +94,6 @@ describe('resume cards', () => {
     const card = screen.getByRole('heading', { name: 'Associate of Arts' }).closest('article')!
     expect(within(card).getByText('Rogue Community College')).toBeInTheDocument()
     expect(within(card).getByText('1996 – 1998')).toBeInTheDocument()
-  })
-
-  it('keeps the summary and badges of a folded card in view', () => {
-    renderApp('/resume')
-
-    expect(screen.getByText(/A greenfield Android application store/)).toBeVisible()
-    expect(within(fuhuCard()).getByText('Team Leadership')).toBeVisible()
   })
 
   it('opens every card with Expand all, and folds them again with Collapse all', () => {

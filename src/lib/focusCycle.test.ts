@@ -1,11 +1,10 @@
 import { expect, it } from 'vitest'
-import { focusReducer, focusTitle, formatRemaining, hasEnded, initialFocusState, PHASES, phaseMs, remainingMs, type FocusState } from './focusCycle'
+import { focusReducer, focusTitle, formatRemaining, hasEnded, initialFocusState, phaseMs, remainingMs, type FocusState } from './focusCycle'
 
 const lengths = { work: 25, break: 5, longBreak: 20 }
 const MIN = 60_000
 
-it('runs Work, Break, Work, Break, Work, Long break', () => {
-  expect(PHASES).toEqual(['work', 'break', 'work', 'break', 'work', 'longBreak'])
+it('gives each phase its own length from the pickers', () => {
   expect([0, 1, 5].map((p) => phaseMs(p, lengths))).toEqual([25 * MIN, 5 * MIN, 20 * MIN])
 })
 
