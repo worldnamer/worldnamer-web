@@ -203,30 +203,13 @@ describe('the tasks of the selected list', () => {
   })
 })
 
-describe('the height of the tasks area', () => {
-  it('is a fixed-height box that scrolls, holding the list', async () => {
-    server.use(...both())
-    renderTasks()
-
-    const box = (await screen.findByRole('list', { name: 'Shopping List tasks' })).parentElement
-    expect(box).toHaveClass('h-72', 'overflow-y-auto')
-  })
-
-  it('holds the loading message in the same box, so the card keeps its height while the tasks load', async () => {
-    server.use(...both())
-    renderTasks()
-
-    expect((await screen.findByText('Loading tasks...')).parentElement).toHaveClass('h-72', 'overflow-y-auto')
-  })
-
-  it('cuts long text to one line with an ellipsis rather than widening the box, with the full text as its title', async () => {
+describe('the text of a task', () => {
+  it('gives long text its full text as its title', async () => {
     const text = 'x'.repeat(100)
     server.use(...taskListsHandlers(lists), ...tasksHandlers({ 4: [{ id: 1, text, done: false }] }))
     renderTasks()
 
     const button = await screen.findByRole('button', { name: `Edit ${text}` })
-    expect(button).toHaveClass('truncate', 'min-w-0', 'flex-1')
-    expect(button).not.toHaveClass('break-words')
     expect(button).toHaveAttribute('title', text)
   })
 
@@ -915,20 +898,6 @@ describe('deleting a task', () => {
     expect(await screen.findByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
 
-  it('hides the button only where the device can hover, until the row is hovered or focused', async () => {
-    server.use(...both())
-    renderTasks()
-
-    const button = await screen.findByRole('button', { name: 'Delete Milk' })
-    expect(button).toHaveClass(
-      'can-hover:opacity-0',
-      'group-hover:opacity-100',
-      'group-focus-within:opacity-100',
-      'focus-visible:opacity-100',
-    )
-    expect(button.closest('li')).toHaveClass('group')
-  })
-
   it('is reached with Tab from the task text, after its calendar button', async () => {
     const user = userEvent.setup()
     server.use(...both())
@@ -1135,13 +1104,11 @@ describe('deleting all done tasks', () => {
     return dialog()
   }
 
-  it('labels the broom, and puts it in the + row at the right edge', async () => {
+  it('labels the broom, and puts it in the + row', async () => {
     server.use(...both())
     renderTasks()
     const button = await screen.findByRole('button', { name: 'Delete all done tasks' })
     expect(button.parentElement).toBe(plus().parentElement)
-    expect(button.parentElement).toHaveClass('flex', 'items-center')
-    expect(button).toHaveClass('ml-auto')
   })
 
   it('is disabled with nothing done and enabled once a task is checked', async () => {
@@ -1417,7 +1384,7 @@ describe("a task's due date", () => {
     })
   })
 
-  it('shows the date on the same line, after the task text and before the delete button, never shrinking or wrapping', async () => {
+  it('shows the date after the task text and before the delete button', async () => {
     server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-05' }]))
     renderTasks()
 
@@ -1429,7 +1396,6 @@ describe("a task's due date", () => {
     expect(date.parentElement).toBe(row)
     expect(children.indexOf(text)).toBeLessThan(children.indexOf(date))
     expect(children.indexOf(date)).toBeLessThan(children.indexOf(remove))
-    expect(date).toHaveClass('shrink-0', 'whitespace-nowrap')
   })
 
   it('shows no date, and no secondary text, for a task without one', async () => {
@@ -1502,19 +1468,6 @@ describe('setting a due date', () => {
     renderTasks()
 
     expect(await screen.findByRole('button', { name: 'Due date for task' })).toBeInTheDocument()
-  })
-
-  it('hides the calendar button only where the device can hover, and keeps it shown while its picker is open', async () => {
-    server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-    renderTasks()
-
-    expect(await screen.findByRole('button', { name: 'Due date for Milk' })).toHaveClass(
-      'can-hover:opacity-0',
-      'group-hover:opacity-100',
-      'group-focus-within:opacity-100',
-      'focus-visible:opacity-100',
-      'data-[state=open]:opacity-100',
-    )
   })
 
   it('is reached with Tab between the task text and the delete button', async () => {

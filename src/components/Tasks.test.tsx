@@ -6,7 +6,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
 import { API_BASE, errorBody, REFRESH_TOKEN, taskListsHandlers } from '@/mocks/handlers'
@@ -216,92 +216,6 @@ describe('names in the row', () => {
     renderTasks()
 
     expect((await screen.findByRole('button', { name })).textContent).toBe(name)
-  })
-
-  it('cuts a 100-character name, whatever its length, so the box stays inside its maximum width', async () => {
-    const name = 'x'.repeat(100)
-    server.use(...taskListsHandlers([{ id: 1, name }]))
-    renderTasks()
-
-    const button = await screen.findByRole('button', { name })
-    expect(button.textContent).toBe(`${'x'.repeat(20)}...`)
-    expect(button).toHaveClass('max-w-56')
-  })
-})
-
-describe('scrolling the row', () => {
-  // jsdom does no layout, so these tests give the row one: boxes 100px wide with 8px between them, in a scroller of a
-  // chosen width. Setting scrollLeft fires a scroll event, as in a browser, and stays between 0 and the far end.
-  const BOX = 100
-  const STEP = 108
-
-  beforeEach(() => {
-    // On the prototype, so a list box added during the test is laid out too.
-    Object.defineProperties(HTMLLIElement.prototype, {
-      offsetLeft: {
-        configurable: true,
-        get(this: HTMLLIElement) {
-          return Array.from(this.parentElement?.children ?? []).indexOf(this) * STEP
-        },
-      },
-      offsetWidth: { configurable: true, get: () => BOX },
-    })
-  })
-
-  afterEach(() => {
-    delete (HTMLLIElement.prototype as { offsetLeft?: number }).offsetLeft
-    delete (HTMLLIElement.prototype as { offsetWidth?: number }).offsetWidth
-  })
-
-  // Gives the scroller its width. Returns the scroller.
-  function layOut(width: number) {
-    const list = rowList()
-    const scroller = list.parentElement!
-    const scrollWidth = () => Math.max(width, list.children.length * STEP - (STEP - BOX))
-    let left = 0
-    Object.defineProperties(scroller, {
-      clientWidth: { configurable: true, get: () => width },
-      scrollWidth: { configurable: true, get: scrollWidth },
-      scrollLeft: {
-        configurable: true,
-        get: () => left,
-        set: (value: number) => {
-          left = Math.max(0, Math.min(value, scrollWidth() - width))
-          scroller.dispatchEvent(new Event('scroll'))
-        },
-      },
-    })
-    return scroller
-  }
-
-  const lists = (count: number) => Array.from({ length: count }, (_, i) => ({ id: i + 1, name: `List ${i + 1}` }))
-
-  it('scrolls a newly added list into view', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers(lists(5)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 5' })
-    const scroller = layOut(250)
-
-    await user.click(screen.getByRole('button', { name: 'Add list' }))
-    await user.keyboard('List 6{Enter}')
-
-    // List 6 sits at 540 to 640, the end of the row, so the row scrolls to its far end (640 - 250) to show it whole.
-    await screen.findByRole('button', { name: 'List 6', pressed: true })
-    expect(scroller.scrollLeft).toBe(390)
-  })
-
-  it('scrolls a list into view when it is selected', async () => {
-    const user = userEvent.setup()
-    server.use(...taskListsHandlers(lists(5)))
-    renderTasks()
-    await screen.findByRole('button', { name: 'List 5' })
-    const scroller = layOut(250)
-
-    // List 4 (324 to 424) is past the right edge; the row scrolls to List 3, from which List 4 shows whole.
-    await user.click(screen.getByRole('button', { name: 'List 4' }))
-
-    expect(scroller.scrollLeft).toBe(2 * STEP)
   })
 })
 

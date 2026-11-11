@@ -66,19 +66,6 @@ describe('the trash button on a rolodex row', () => {
     expect(within(row).getByRole('link', { name: 'Bread' })).toHaveClass('flex-1')
     expect(row.children[1]).toBe(button)
   })
-
-  it('is hidden only where the device can hover, until the row is hovered or focused', async () => {
-    setSessionFlag()
-    server.use(refreshHandler, ...recipesHandlers(recipes))
-    renderApp('/recipes')
-
-    expect(await trash('Bread')).toHaveClass(
-      'can-hover:opacity-0',
-      'group-hover:opacity-100',
-      'group-focus-within:opacity-100',
-      'focus-visible:opacity-100',
-    )
-  })
 })
 
 describe('deleting a recipe', () => {

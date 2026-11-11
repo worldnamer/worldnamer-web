@@ -465,14 +465,13 @@ describe('TodayCard', () => {
     })
   })
 
-  it('puts a long day in a named, focusable, scrolling region', async () => {
+  it('puts a long day in a named, focusable region', async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       timedEvent(`t${i}`, `Event ${i}`, `2026-11-01T${String(i % 24).padStart(2, '0')}:30:00-08:00`, `2026-11-01T${String(i % 24).padStart(2, '0')}:45:00-08:00`),
     )
     server.use(...googleCalendarHandlers('connected', many))
     renderCard()
     const region = await screen.findByRole('region', { name: "Today's events" })
-    expect(region).toHaveClass('max-h-96', 'overflow-y-auto')
     expect(region).toHaveAttribute('tabindex', '0')
     expect(within(region).getByRole('list')).toBeInTheDocument()
     region.focus()

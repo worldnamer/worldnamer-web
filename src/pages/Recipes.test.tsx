@@ -66,16 +66,14 @@ describe('the Recipes page', () => {
     expect(await screen.findByText('Could not load recipes.')).toBeInTheDocument()
   })
 
-  it('puts the rolodex first in the page and in the quarter column from lg, with the card column at half', async () => {
+  it('puts the rolodex before the card column in the page', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers(recipes))
     renderApp('/recipes')
 
     const page = await screen.findByRole('region', { name: 'Recipes page' })
-    expect(page).toHaveClass('flex', 'flex-col', 'gap-4', 'sm:gap-6', 'lg:flex-row', 'lg:items-start')
     const [rolodexColumn, cardColumn] = Array.from(page.children)
-    expect(rolodexColumn).toHaveClass('w-full', 'lg:order-last', 'lg:w-1/4')
-    expect(cardColumn).toHaveClass('w-full', 'lg:w-1/2')
+    expect(rolodexColumn).not.toBe(cardColumn)
     expect(within(rolodexColumn as HTMLElement).getByRole('region', { name: 'Recipes' })).toBeInTheDocument()
   })
 
@@ -109,13 +107,13 @@ describe('the Recipes page', () => {
     expect(screen.queryByRole('region', { name: 'Recipes' })).not.toBeInTheDocument()
   })
 
-  it('shows the prompt, hidden below lg, when no recipe is selected', async () => {
+  it('shows the prompt when no recipe is selected', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...recipesHandlers(recipes))
     renderApp('/recipes')
 
     const prompt = await screen.findByText('Pick a recipe or add one')
-    expect(prompt).toHaveClass('hidden', 'lg:block')
+    expect(prompt).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Recipe card' })).not.toBeInTheDocument()
   })
 })

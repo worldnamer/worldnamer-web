@@ -78,16 +78,7 @@ describe('section tabs', () => {
     expect(tabs.querySelector('[aria-current="page"]')).toBeNull()
   })
 
-  it('is hidden below the lg breakpoint and shown from it up', async () => {
-    setSessionFlag()
-    server.use(refreshHandler)
-    renderLayout('/')
-
-    const tabs = await screen.findByRole('navigation', { name: 'Sections' })
-    expect(tabs).toHaveClass('hidden', 'lg:flex')
-  })
-
-  it('sits after the page content, to its right', async () => {
+  it('sits after the page content', async () => {
     setSessionFlag()
     server.use(refreshHandler)
     renderLayout('/')

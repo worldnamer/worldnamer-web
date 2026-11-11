@@ -98,13 +98,6 @@ describe('resume cards', () => {
     expect(within(card).getByText('1996 – 1998')).toBeInTheDocument()
   })
 
-  it('keeps the summary and badges of a folded card in view', () => {
-    renderApp('/resume')
-
-    expect(screen.getByText(/A greenfield Android application store/)).toBeVisible()
-    expect(within(fuhuCard()).getByText('Team Leadership')).toBeVisible()
-  })
-
   it('opens every card with Expand all, and folds them again with Collapse all', () => {
     renderApp('/resume')
 

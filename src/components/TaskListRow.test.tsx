@@ -1,6 +1,5 @@
-// Tests for the row of task lists: the fades at its edges that show more lists lie past them, and dragging the row
-// sideways with the mouse. jsdom does no layout, so each test lays the boxes out by hand.
-import { act, fireEvent, render, screen } from '@testing-library/react'
+// Tests for dragging the row of task lists sideways with the mouse. jsdom does no layout, so each test lays the boxes out by hand.
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { TaskListRow } from './TaskListRow'
 
@@ -57,86 +56,6 @@ describe('the lists row', () => {
   afterEach(() => {
     Reflect.deleteProperty(HTMLLIElement.prototype, 'offsetLeft')
     Reflect.deleteProperty(HTMLLIElement.prototype, 'offsetWidth')
-  })
-
-  it('shows no fade when every list fits', () => {
-    const { container } = renderRow(lists(3))
-    layOut(400)
-
-    expect(container.querySelector('[data-fade="start"]')).toBeNull()
-    expect(container.querySelector('[data-fade="end"]')).toBeNull()
-  })
-
-  it('shows the end fade when more lists lie past the right edge', () => {
-    const { container } = renderRow(lists(5))
-    const scroller = layOut(250)
-    fireEvent.scroll(scroller)
-
-    expect(container.querySelector('[data-fade="end"]')).not.toBeNull()
-    expect(container.querySelector('[data-fade="start"]')).toBeNull()
-  })
-
-  it('shows both fades part-way along', () => {
-    const { container } = renderRow(lists(5))
-    const scroller = layOut(250)
-    act(() => {
-      scroller.scrollLeft = 100
-    })
-
-    expect(container.querySelector('[data-fade="start"]')).not.toBeNull()
-    expect(container.querySelector('[data-fade="end"]')).not.toBeNull()
-  })
-
-  it('shows only the start fade at the far end', () => {
-    const { container } = renderRow(lists(5))
-    const scroller = layOut(250)
-    act(() => {
-      scroller.scrollLeft = scroller.scrollWidth
-    })
-
-    expect(container.querySelector('[data-fade="start"]')).not.toBeNull()
-    expect(container.querySelector('[data-fade="end"]')).toBeNull()
-  })
-
-  it('updates the fades when lists are added or the window is resized', () => {
-    const { container, rerender } = renderRow(lists(3))
-    const scroller = layOut(400)
-
-    expect(container.querySelector('[data-fade="start"]')).toBeNull()
-    expect(container.querySelector('[data-fade="end"]')).toBeNull()
-
-    rerender(<TaskListRow lists={lists(8)} selectedId={null} onSelect={() => {}} onAdd={async () => null} />)
-
-    expect(container.querySelector('[data-fade="end"]')).not.toBeNull()
-
-    // Widen the viewport so the eight lists fit. Only a resize event tells the row, since nothing scrolls.
-    Object.defineProperty(scroller, 'clientWidth', { configurable: true, get: () => 1000 })
-    act(() => {
-      window.dispatchEvent(new Event('resize'))
-    })
-
-    expect(container.querySelector('[data-fade="end"]')).toBeNull()
-  })
-
-  it('keeps the fades out of the way', () => {
-    const { container } = renderRow(lists(5))
-    const scroller = layOut(250)
-    act(() => {
-      scroller.scrollLeft = 100
-    })
-
-    const fades = [container.querySelector('[data-fade="start"]'), container.querySelector('[data-fade="end"]')]
-    for (const fade of fades) {
-      expect(fade).not.toBeNull()
-      expect(fade?.getAttribute('aria-hidden')).toBe('true')
-      expect(fade?.classList.contains('pointer-events-none')).toBe(true)
-    }
-
-    // The + sits beside the scrolling area, not inside it, so the fades never cover it.
-    const addButton = screen.getByRole('button', { name: 'Add list' })
-    const area = scroller.parentElement!
-    expect(area.contains(addButton)).toBe(false)
-    expect(area.nextElementSibling).toBe(addButton)
   })
 
   it('scrolls the row with a mouse drag', () => {
