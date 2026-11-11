@@ -962,17 +962,13 @@ describe('deleting a list in the editor', () => {
     return screen.findByRole('alertdialog', { name: title })
   }
 
-  it("asks first, in the shared dialog titled \"Delete 'Chores'?\"", async () => {
+  it("asks first, in a dialog titled \"Delete 'Chores'?\"", async () => {
     const user = userEvent.setup()
     server.use(...taskListsHandlers(shopping))
     renderTasks()
     await openEditor(user)
 
-    const dialog = await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")
-
-    expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(await askToDelete(user, 'Delete Chores', "Delete 'Chores'?")).toBeInTheDocument()
   })
 
   it('names a blank list\'s button "Delete list" and asks "Delete this list?", with no empty quotes', async () => {

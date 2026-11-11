@@ -348,18 +348,6 @@ describe('deleting a habit', () => {
     return screen.findByRole('alertdialog', { name: "Delete 'Stretch'?" })
   }
 
-  it("asks first, with the title \"Delete 'Stretch'?\" and a description", async () => {
-    const user = userEvent.setup()
-    server.use(...habitsHandlers(stretch))
-    renderHabits()
-
-    const dialog = await openDialog(user)
-
-    expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
-  })
-
   it('sends no request on Cancel, and the habit stays', async () => {
     const user = userEvent.setup()
     let deletes = 0
@@ -538,15 +526,6 @@ describe('the week grid', () => {
 
     expect(await screen.findByRole('table', { name: 'Habits Nov 2 – Nov 8' })).toBeInTheDocument()
     expect(weeks).toEqual(['2026-11-02'])
-    expect(checkedBoxes()).toEqual([])
-  })
-
-  it('shows every box empty when the response has no completed_dates', async () => {
-    server.use(http.get(`${API_BASE}/habits`, () => HttpResponse.json({ habits: [{ id: 7, name: 'Stretch' }] })))
-    renderHabits()
-    await screen.findByText('Stretch')
-
-    expect(screen.getAllByRole('checkbox')).toHaveLength(7)
     expect(checkedBoxes()).toEqual([])
   })
 

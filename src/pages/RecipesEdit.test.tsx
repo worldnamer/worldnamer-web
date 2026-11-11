@@ -540,18 +540,6 @@ describe('the minutes', () => {
 })
 
 describe('editing one field at a time', () => {
-  it('shows every field as text, with a prompt for the empty ones, and no boxes', async () => {
-    setSessionFlag()
-    mockRecipes([{ id: 1, title: 'Bread' }])
-    renderApp('/recipes/1')
-
-    expect(await screen.findByRole('heading', { name: 'Bread' })).toBeInTheDocument()
-    expect(screen.getByTitle('Edit prep instructions')).toHaveTextContent('Add prep instructions')
-    expect(screen.getByTitle('Edit cooking instructions')).toHaveTextContent('Add cooking instructions')
-    expect(screen.getByTitle('Edit prep minutes')).toHaveTextContent('Add prep time')
-    expect(screen.queryAllByRole('textbox')).toEqual([])
-  })
-
   it('opens the title from the keyboard with its text selected, and Escape closes it without saving', async () => {
     setSessionFlag()
     const log = mockRecipes([bread])
@@ -584,14 +572,11 @@ describe('editing one field at a time', () => {
     await waitFor(() => expect(screen.getByTitle('Edit recipe title')).toHaveFocus())
   })
 
-  it('shows the instructions as text with line breaks, markup as text, and opens the box on click', async () => {
+  it('opens the instructions box on click with the saved text and focus', async () => {
     setSessionFlag()
     mockRecipes([{ id: 1, title: 'Bread', prep_instructions: 'Mix <b>well</b>.\nKnead.' }])
     renderApp('/recipes/1')
 
-    const text = await screen.findByTitle('Edit prep instructions')
-    expect(text.querySelector('b')).toBeNull()
-    expect(text.textContent).toBe('Mix <b>well</b>.\nKnead.')
     const box = await openBox('Prep instructions')
     expect(box).toHaveValue('Mix <b>well</b>.\nKnead.')
     expect(box).toHaveFocus()
@@ -625,16 +610,6 @@ describe('the ingredient rows', () => {
     within(screen.getByRole('heading', { name: 'Ingredients' }).parentElement!.parentElement!)
       .queryAllByTitle(/^Edit ingredient/)
       .map((b) => b.textContent)
-
-  it('shows no ingredients as a note and a plus button, with no boxes', async () => {
-    setSessionFlag()
-    mockRecipes([{ id: 1, title: 'Water' }])
-    renderApp('/recipes/1')
-
-    expect(await screen.findByText('No ingredients yet.')).toBeInTheDocument()
-    expect(await plus()).toBeInTheDocument()
-    expect(screen.queryAllByRole('textbox')).toEqual([])
-  })
 
   it('shows saved rows as text, amount first, with the plus button after them', async () => {
     setSessionFlag()

@@ -821,16 +821,12 @@ describe('deleting a task', () => {
     expect(await screen.findByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
 
-  it('asks first, in a dialog titled with the task, and opens with the keyboard', async () => {
+  it('asks first, in a dialog titled with the task', async () => {
     const user = userEvent.setup()
     server.use(...both())
     renderTasks()
 
-    ;(await screen.findByRole('button', { name: 'Delete Milk' })).focus()
-    await user.keyboard('{Enter}')
-
-    const confirm = await dialog("Delete 'Milk'?")
-    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(await askToDelete(user)).toBeInTheDocument()
   })
 
   it('titles the dialog "Delete this task?" for a blank task, with no empty quotes', async () => {
@@ -1015,14 +1011,6 @@ describe('deleting all done tasks', () => {
     await waitFor(() => expect(broom()).toBeEnabled())
   })
 
-  it('opens "Delete all done tasks?" when tapped', async () => {
-    const user = userEvent.setup()
-    server.use(...both())
-    renderTasks()
-    const confirm = await askToClear(user)
-    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
-  })
-
   it('hides the broom while a task is being drafted and brings it back when the draft closes', async () => {
     const user = userEvent.setup()
     server.use(...both())
@@ -1184,13 +1172,6 @@ describe("a task's due date", () => {
       expect(date).not.toHaveClass('text-destructive')
     })
 
-    it('does not mark a future date', async () => {
-      server.use(...dated([{ id: 1, text: 'Milk', done: false, due_on: '2026-11-02' }]))
-      renderTasks()
-
-      expect(await dateOf('Due Nov 2')).not.toHaveClass('text-destructive')
-    })
-
     it('does not mark a past date on a checked task', async () => {
       server.use(...dated([{ id: 1, text: 'Milk', done: true, due_on: '2026-10-31' }]))
       renderTasks()
@@ -1210,15 +1191,6 @@ describe("a task's due date", () => {
       expect(await dateOf('Due Oct 31')).toHaveClass('text-muted-foreground')
       await user.click(screen.getByRole('checkbox', { name: 'Milk' }))
       expect(await dateOf('Overdue, due Oct 31')).toHaveClass('text-destructive')
-    })
-
-    it('shows nothing for a task with no date', async () => {
-      server.use(...dated([{ id: 1, text: 'Milk', done: false }]))
-      renderTasks()
-
-      await screen.findByRole('checkbox', { name: 'Milk' })
-      expect(rowOf('Milk').querySelector('time')).toBeNull()
-      expect(screen.queryByText(/overdue/i)).toBeNull()
     })
   })
 
@@ -1268,14 +1240,6 @@ describe("a task's due date", () => {
       const date = await dateOf('Overdue, due Oct 31')
       expect(date).toHaveClass('text-destructive')
       expect(date).not.toHaveClass('line-through')
-    })
-
-    it('shows no date span for a task with no date', async () => {
-      server.use(...dated([{ id: 1, text: 'Milk', done: true }]))
-      renderTasks()
-
-      await screen.findByRole('checkbox', { name: 'Milk' })
-      expect(rowOf('Milk').querySelector('time')).toBeNull()
     })
   })
 

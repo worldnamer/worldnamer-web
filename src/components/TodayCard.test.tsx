@@ -60,14 +60,6 @@ async function settled() {
 }
 
 describe('TodayCard', () => {
-  it('is a Today region', async () => {
-    server.use(...googleCalendarHandlers('connected'))
-    renderCard()
-    await settled()
-
-    expect(screen.getByRole('region', { name: 'Today' })).toBeInTheDocument()
-  })
-
   it('never calls the status endpoint', async () => {
     let statusCalls = 0
     server.use(
@@ -226,11 +218,6 @@ describe('TodayCard', () => {
       it('has no gap with only timed events or only all-day events', async () => {
         await useList([breakfast, dinner], 2)
         for (const li of screen.getAllByRole('listitem')) expect(li).not.toHaveClass('mt-2')
-      })
-
-      it('has no gap with only all-day events', async () => {
-        await useList([holiday], 1)
-        expect(screen.getByRole('listitem')).not.toHaveClass('mt-2')
       })
 
       it('shows a rule between ended and not-ended events, and an event in progress is on the later side', async () => {

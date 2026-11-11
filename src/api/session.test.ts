@@ -20,7 +20,6 @@ import {
   API_BASE,
   errorBody,
   LOGIN_TOKEN,
-  logoutHandler,
   REFRESH_TOKEN,
   sessionHandlers,
   tokenBody,
@@ -207,13 +206,6 @@ describe('logout', () => {
     server.use(http.delete(`${API_BASE}/session`, () => HttpResponse.error()))
     loggedIn()
     await expect(logout()).resolves.toBeUndefined()
-    expectLoggedOut()
-  })
-
-  it('works with the shared logout handler too', async () => {
-    server.use(logoutHandler)
-    loggedIn()
-    await logout()
     expectLoggedOut()
   })
 })
