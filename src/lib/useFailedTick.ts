@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
-import { type FailedBox } from '@/components/HabitsDayCell'
+
+// A box that failed to save: which habit and day, for the message and the cell's outline.
+export type FailedBox = { habitId: number; name: string; date: string }
 
 export function useFailedTick() {
   const [failed, setFailed] = useState<FailedBox | null>(null)

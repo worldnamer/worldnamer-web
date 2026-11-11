@@ -10,9 +10,7 @@ import {
   formatDayLabel,
 } from '@/lib/week'
 import { todayClass } from '@/lib/todayHighlight'
-
-// A box that failed to save: which habit and day, for the message and the cell's outline.
-export type FailedBox = { habitId: number; name: string; date: string }
+import { type FailedBox } from '@/lib/useFailedTick'
 
 // Ticks or unticks one day in one cached week, leaving every other cell alone.
 function setTicked(queryClient: QueryClient, weekStart: string, habitId: number, date: string, ticked: boolean) {
