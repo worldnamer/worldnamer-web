@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   deleteHabit,
   listHabits,
@@ -24,6 +24,7 @@ import { DraftRow } from '@/components/HabitsDraftRow'
 import { DayCell } from '@/components/HabitsDayCell'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
 import { useFailedTick } from '@/lib/useFailedTick'
+import { useDraft } from '@/lib/useDraft'
 
 // The logged-in user's habits as a grid: a row per habit and a column per day of one week, Monday to Sunday. Each
 // week is its own ['habits', weekStart] query, cached by TanStack Query; logout clears the cache.
@@ -46,9 +47,7 @@ export function Habits() {
   })
   const days = weekDays(weekStart)
   const range = formatWeekRange(weekStart, Number(todayIso.slice(0, 4)))
-  const plusRef = useRef<HTMLButtonElement>(null)
-  const [drafting, setDrafting] = useState(false)
-  const refocusPlus = useRef(false)
+  const { drafting, setDrafting, closeDraft, plusRef } = useDraft()
   // The extracted confirm delete hook
   const del = useConfirmDelete<Habit>(() => plusRef.current)
   const [deletingIds, setDeletingIds] = useState<number[]>([])
@@ -69,19 +68,6 @@ export function Habits() {
     onError: (_error, habit) => setDeleteError(`Couldn't delete '${habit.name}'. Try again.`),
     onSettled: (_result, _error, habit) => setDeletingIds((ids) => ids.filter((id) => id !== habit.id)),
   })
-
-  // The + button is disabled while the draft is open, so focus can only go back to it after the draft has gone.
-  useEffect(() => {
-    if (!drafting && refocusPlus.current) {
-      refocusPlus.current = false
-      plusRef.current?.focus()
-    }
-  }, [drafting])
-
-  function closeDraft(refocus: boolean) {
-    refocusPlus.current = refocus
-    setDrafting(false)
-  }
 
   function moveWeek(weeks: number) {
     failedTick.setFailed(null)
