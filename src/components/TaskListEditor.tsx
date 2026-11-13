@@ -1,11 +1,12 @@
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { TaskList } from '@/api/taskLists'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
 import { isBlank } from '@/lib/taskListNames'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { useDraft } from '@/lib/useDraft'
 
 // The list's name in quotes for a label, or just "list" when it is blank, so a label never shows empty quotes:
 // "Move 'Chores' up", "Move list up".
@@ -114,26 +115,10 @@ export function TaskListEditor({
   onConfirm: () => void
 }) {
   const groupRef = useRef<HTMLDivElement>(null)
-  const plusRef = useRef<HTMLButtonElement>(null)
-  const [drafting, setDrafting] = useState(false)
-  const refocusPlus = useRef(false)
+  const { drafting, setDrafting, closeDraft, plusRef } = useDraft()
   // The dialog is controlled: `open` shows it and `target` is the list it asks about. They are separate so the title
   // keeps its text while the dialog fades out.
   const del = useConfirmDelete<TaskList>(() => plusRef.current)
-
-  // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
-  useEffect(() => {
-    if (!drafting && refocusPlus.current) {
-      refocusPlus.current = false
-      plusRef.current?.focus()
-    }
-  }, [drafting])
-
-  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
-  function closeDraft(refocus: boolean) {
-    refocusPlus.current = refocus
-    setDrafting(false)
-  }
 
   async function saveDraft(text: string, viaEnter: boolean) {
     const list = await onAdd(text)
