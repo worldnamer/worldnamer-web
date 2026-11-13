@@ -13,6 +13,7 @@ export function useDraft() {
     }
   }, [drafting])
 
+  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
   function closeDraft(refocus: boolean) {
     refocusPlus.current = refocus
     setDrafting(false)

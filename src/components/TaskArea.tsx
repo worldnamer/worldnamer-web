@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BrushCleaningIcon, PlusIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import { clearDoneTasks, createTask, deleteTask, listTasks, type Task } from '@/api/tasks'
 import type { TaskList } from '@/api/taskLists'
@@ -13,6 +13,7 @@ import { refusal } from '@/lib/refusal'
 import { accessibleListName } from '@/lib/taskListNames'
 import { isBlankText } from '@/lib/taskText'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { useDraft } from '@/lib/useDraft'
 
 // The selected list's tasks, oldest first. Each list's tasks are their own ['tasks', listId] query, so going back to a
 // list fetched in the last minute sends no request. Only the selected list is fetched.
@@ -38,28 +39,12 @@ export function TaskArea({ list, onError }: { list: TaskList; onError: (message:
   // Today's local date, read once like the year, so a row can tell whether its due date has passed. No timer: a page
   // left open past midnight keeps the day it loaded on.
   const [today] = useState(() => toIso(new Date()))
-  const plusRef = useRef<HTMLButtonElement>(null)
-  const [drafting, setDrafting] = useState(false)
-  const refocusPlus = useRef(false)
+  const { drafting, setDrafting, closeDraft, plusRef } = useDraft()
   const del = useConfirmDelete<Task>(() => plusRef.current)
   // The second dialog, for clearing every done task. It names no task, so it needs no target.
   const [clearOpen, setClearOpen] = useState(false)
   const broomRef = useRef<HTMLButtonElement>(null)
   const [deletingIds, setDeletingIds] = useState<number[]>([])
-
-  // The + row is replaced by the draft, so focus can only go back to it once the draft has gone.
-  useEffect(() => {
-    if (!drafting && refocusPlus.current) {
-      refocusPlus.current = false
-      plusRef.current?.focus()
-    }
-  }, [drafting])
-
-  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
-  function closeDraft(refocus: boolean) {
-    refocusPlus.current = refocus
-    setDrafting(false)
-  }
 
   // The list id is a variable rather than read from `list`, and the cache update uses it, so a save still in flight
   // when another list is chosen lands in the list it was typed into. These callbacks live here, not in each mutate
