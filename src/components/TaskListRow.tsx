@@ -5,6 +5,7 @@ import { TaskListNameInput } from '@/components/TaskListNameInput'
 import { Button } from '@/components/ui/button'
 import { accessibleListName, isBlank, rowName } from '@/lib/taskListNames'
 import { cn } from '@/lib/utils'
+import { useDraft } from '@/lib/useDraft'
 
 // The list's boxes (its <li> elements), left to right.
 function boxesOf(list: HTMLUListElement | null) {
@@ -46,9 +47,7 @@ export function TaskListRow({
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
-  const plusRef = useRef<HTMLButtonElement>(null)
-  const [drafting, setDrafting] = useState(false)
-  const refocusPlus = useRef(false)
+  const { drafting, setDrafting, closeDraft, plusRef } = useDraft()
   // Whether a fade shows at the left edge, because the row has been scrolled away from its start.
   const [scrolledAway, setScrolledAway] = useState(false)
   // Whether a fade shows at the right edge, because more lists lie past it.
@@ -75,20 +74,6 @@ export function TaskListRow({
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  // The + is disabled while the draft is open, so focus can only go back to it once the draft has gone.
-  useEffect(() => {
-    if (!drafting && refocusPlus.current) {
-      refocusPlus.current = false
-      plusRef.current?.focus()
-    }
-  }, [drafting])
-
-  // Closes the draft. Focus goes back to the + after Enter or Escape; after a click elsewhere it stays there.
-  function closeDraft(refocus: boolean) {
-    refocusPlus.current = refocus
-    setDrafting(false)
-  }
 
   async function saveDraft(text: string, viaEnter: boolean) {
     const list = await onAdd(text)
