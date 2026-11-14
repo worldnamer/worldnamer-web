@@ -79,6 +79,14 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
   })
 
+  it('shows The connection to YouTube was lost. with Connect when lost', async () => {
+    server.use(...youtubeHandlers('lost'))
+    renderCard()
+    await settled()
+    expect(screen.getByText('The connection to YouTube was lost.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
+  })
+
   it("shows YouTube wasn't connected. after a cancelled connect", async () => {
     server.use(...youtubeHandlers('not_connected'))
     renderCard('/youtube?youtube=cancelled')
@@ -233,5 +241,13 @@ describe('YouTubePlaylistCard', () => {
     await settled()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
+  })
+
+  it('shows the outcome message instead of the lost line when both apply', async () => {
+    server.use(...youtubeHandlers('lost'))
+    renderCard('/youtube?youtube=failed')
+    await settled()
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't connect YouTube. Try again.")
+    expect(screen.queryByText('The connection to YouTube was lost.')).not.toBeInTheDocument()
   })
 })

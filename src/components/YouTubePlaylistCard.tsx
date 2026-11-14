@@ -66,6 +66,7 @@ export function YouTubePlaylistCard() {
             Couldn't load your YouTube connection. Try reloading the page.
           </p>
         )}
+        {data?.status === 'lost' && outcome === null && <p>The connection to YouTube was lost.</p>}
         {(data?.status === 'not_connected' || data?.status === 'lost') && (
           /* After success the page is leaving for Google, so the button stays disabled;
              a second click would start a second authorization flow. */
