@@ -29,6 +29,19 @@ export async function getYouTubePlaylists(): Promise<YouTubePlaylistsResponse> {
   return (await response.json()) as YouTubePlaylistsResponse
 }
 
+// PUT /youtube_connection/playlist saves the playlist the user chose to show. Resolves the connection as the API now
+// has it. Rejects with ApiError on a non-2xx answer.
+export async function chooseYouTubePlaylist(id: string): Promise<YouTubeConnection> {
+  const response = await apiFetch('/youtube_connection/playlist', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist: { id } }),
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { youtube_connection: YouTubeConnection }
+  return body.youtube_connection
+}
+
 // POST /youtube_connection/authorization. The API answers with the Google consent address and sets the
 // wn_youtube_oauth cookie, which is why the request must send credentials; the cookie is what lets the callback
 // check that the consent started in this browser. Rejects with ApiError on a non-2xx answer.

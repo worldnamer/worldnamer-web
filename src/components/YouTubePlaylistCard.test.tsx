@@ -6,7 +6,14 @@ import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
 import { navigateTo } from '@/lib/externalNavigation'
-import { API_BASE, CONSENT_URL, errorBody, REFRESH_TOKEN, youtubeHandlers } from '@/mocks/handlers'
+import {
+  API_BASE,
+  CONSENT_URL,
+  errorBody,
+  REFRESH_TOKEN,
+  youtubeConnectionBody,
+  youtubeHandlers,
+} from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { YouTubePlaylistCard } from './YouTubePlaylistCard'
 
@@ -118,7 +125,7 @@ describe('YouTubePlaylistCard', () => {
     renderCard()
     const list = await screen.findByRole('list', { name: 'Your playlists' })
     const items = within(list).getAllByRole('listitem')
-    expect(items.map((item) => item.textContent)).toEqual(['Cooking', 'Music'])
+    expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual(['Cooking', 'Music'])
   })
 
   it('says You have no playlists on YouTube. when there are none', async () => {
@@ -310,5 +317,107 @@ describe('YouTubePlaylistCard', () => {
     expect(await screen.findByText('The connection to YouTube was lost.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
     expect(connectionCalls).toBeGreaterThanOrEqual(2)
+  })
+
+  it('chooses a playlist and shows it as chosen', async () => {
+    const user = userEvent.setup()
+    let chosenBody: unknown = null
+    server.use(
+      ...youtubeHandlers('connected'),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlists: [
+            { id: 'PLa', title: 'Cooking' },
+            { id: 'PLb', title: 'Music' },
+          ],
+        }),
+      ),
+      http.put(`${API_BASE}/youtube_connection/playlist`, async ({ request }) => {
+        chosenBody = await request.json()
+        return HttpResponse.json(youtubeConnectionBody('connected', { id: 'PLb', title: 'Music' }))
+      }),
+    )
+    renderCard()
+
+    await user.click(await screen.findByRole('button', { name: 'Choose Music' }))
+
+    expect(await screen.findByText('Playlist: Music')).toBeInTheDocument()
+    expect(chosenBody).toEqual({ playlist: { id: 'PLb' } })
+    expect(screen.queryByRole('list', { name: 'Your playlists' })).not.toBeInTheDocument()
+  })
+
+  it('shows the chosen playlist on load without requesting the playlists', async () => {
+    let playlistRequests = 0
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () => {
+        playlistRequests += 1
+        return HttpResponse.json({ youtube_connection: { status: 'connected' }, playlists: [] })
+      }),
+    )
+    renderCard()
+    await settled()
+    expect(screen.getByText('Playlist: Music')).toBeInTheDocument()
+    expect(playlistRequests).toBe(0)
+  })
+
+  it('replaces the choice after Change playlist', async () => {
+    const user = userEvent.setup()
+    let chosenBody: unknown = null
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlists: [
+            { id: 'PLa', title: 'Cooking' },
+            { id: 'PLb', title: 'Music' },
+          ],
+        }),
+      ),
+      http.put(`${API_BASE}/youtube_connection/playlist`, async ({ request }) => {
+        chosenBody = await request.json()
+        return HttpResponse.json(youtubeConnectionBody('connected', { id: 'PLa', title: 'Cooking' }))
+      }),
+    )
+    renderCard()
+
+    await user.click(await screen.findByRole('button', { name: 'Change playlist' }))
+    expect(await screen.findByRole('list', { name: 'Your playlists' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose Cooking' }))
+
+    expect(await screen.findByText('Playlist: Cooking')).toBeInTheDocument()
+    expect(chosenBody).toEqual({ playlist: { id: 'PLa' } })
+  })
+
+  it('keeps the earlier choice when choosing fails', async () => {
+    const user = userEvent.setup()
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlists: [
+            { id: 'PLa', title: 'Cooking' },
+            { id: 'PLb', title: 'Music' },
+          ],
+        }),
+      ),
+      http.put(`${API_BASE}/youtube_connection/playlist`, () =>
+        HttpResponse.json(errorBody('invalid_playlist', 'x'), { status: 422 }),
+      ),
+    )
+    renderCard()
+
+    await user.click(await screen.findByRole('button', { name: 'Change playlist' }))
+    expect(await screen.findByRole('list', { name: 'Your playlists' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose Cooking' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't choose that playlist. Try again.")
+    expect(screen.getByRole('list', { name: 'Your playlists' })).toBeInTheDocument()
+    expect(screen.getByText('Playlist: Music')).toBeInTheDocument()
   })
 })

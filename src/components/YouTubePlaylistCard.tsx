@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import { getYouTubeConnection, getYouTubePlaylists, startYouTubeAuthorization } from '@/api/youtubeConnection'
+import {
+  chooseYouTubePlaylist,
+  getYouTubeConnection,
+  getYouTubePlaylists,
+  startYouTubeAuthorization,
+} from '@/api/youtubeConnection'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
 
@@ -31,6 +36,8 @@ export function YouTubePlaylistCard() {
   const navigate = useNavigate()
   // Read on the first render only, so the message does not change while the card stays open.
   const [outcome, setOutcome] = useState(() => outcomeFrom(search))
+  // Set by Change playlist, so the list of playlists can be shown again for a playlist already chosen.
+  const [changing, setChanging] = useState(false)
 
   // Removes the outcome parameter from the address on mount, replacing the history entry so Back does not return to
   // the message. Other parameters are kept as they are.
@@ -52,12 +59,12 @@ export function YouTubePlaylistCard() {
     refetchOnWindowFocus: false,
   })
 
-  // The playlists are only listed while the user has a link and has not yet chosen one to show.
+  // The playlists are only listed while the user has a link and has either no chosen playlist or is changing it.
   const playlistsQuery = useQuery({
     queryKey: ['youtube_playlists'],
     queryFn: getYouTubePlaylists,
     retry: false,
-    enabled: data?.status === 'connected' && data.playlist === null,
+    enabled: data?.status === 'connected' && (data.playlist === null || changing),
   })
 
   const queryClient = useQueryClient()
@@ -69,6 +76,15 @@ export function YouTubePlaylistCard() {
       queryClient.invalidateQueries({ queryKey: ['youtube_connection'] })
     }
   }, [playlistsStatus, queryClient])
+
+  // The chosen playlist replaces the connection in the cache, so the card shows it without another request.
+  const choose = useMutation({
+    mutationFn: chooseYouTubePlaylist,
+    onSuccess: (connection) => {
+      queryClient.setQueryData(['youtube_connection'], connection)
+      setChanging(false)
+    },
+  })
 
   return (
     <section aria-labelledby="youtube-heading" className="w-full">
@@ -107,18 +123,38 @@ export function YouTubePlaylistCard() {
         )}
         {start.isError && <p role="alert" className="text-destructive">Couldn't start connecting. Try again.</p>}
         {data?.status === 'connected' && <p>YouTube connected.</p>}
+        {data?.playlist && (
+          <div className="flex items-center justify-between gap-3">
+            <p>Playlist: {data.playlist.title}</p>
+            <Button variant="outline" size="sm" onClick={() => setChanging(true)}>
+              Change playlist
+            </Button>
+          </div>
+        )}
         {playlistsQuery.isError && (
           <p role="alert" className="text-destructive">
             Couldn't load your playlists. Try again.
           </p>
         )}
+        {choose.isError && <p role="alert" className="text-destructive">Couldn't choose that playlist. Try again.</p>}
         {playlistsQuery.data?.playlists?.length === 0 && (
           <p className="text-muted-foreground">You have no playlists on YouTube.</p>
         )}
-        {playlistsQuery.data?.playlists && playlistsQuery.data.playlists.length > 0 && (
+        {(changing || !data?.playlist) && playlistsQuery.data?.playlists && playlistsQuery.data.playlists.length > 0 && (
           <ul aria-label="Your playlists" className="grid gap-1">
             {playlistsQuery.data.playlists.map(({ id, title }) => (
-              <li key={id}>{title}</li>
+              <li key={id} className="flex items-center justify-between gap-3">
+                <span>{title}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Choose ${title}`}
+                  disabled={choose.isPending}
+                  onClick={() => choose.mutate(id)}
+                >
+                  Choose
+                </Button>
+              </li>
             ))}
           </ul>
         )}
