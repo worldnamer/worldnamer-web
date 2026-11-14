@@ -51,3 +51,20 @@ export async function startYouTubeAuthorization(): Promise<string> {
   const body = (await response.json()) as { authorization_url: string }
   return body.authorization_url
 }
+
+// One entry of the chosen playlist. `video_id` is null when the video cannot be linked to.
+export type YouTubeVideo = { id: string; video_id: string | null; title: string; position: number }
+
+// What GET /youtube_connection/playlist/items answers. `playlist` and `videos` are null when no playlist is chosen.
+export type YouTubeItemsResponse = {
+  youtube_connection: { status: YouTubeStatus }
+  playlist: { id: string; title: string; available: boolean } | null
+  videos: { total_count: number; items: YouTubeVideo[] } | null
+}
+
+// GET /youtube_connection/playlist/items. Rejects with ApiError on a non-2xx answer.
+export async function getYouTubePlaylistItems(): Promise<YouTubeItemsResponse> {
+  const response = await apiFetch('/youtube_connection/playlist/items')
+  if (!response.ok) throw await apiErrorFrom(response)
+  return (await response.json()) as YouTubeItemsResponse
+}

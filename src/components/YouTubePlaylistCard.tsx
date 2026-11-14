@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router'
 import {
   chooseYouTubePlaylist,
   getYouTubeConnection,
+  getYouTubePlaylistItems,
   getYouTubePlaylists,
   startYouTubeAuthorization,
 } from '@/api/youtubeConnection'
@@ -67,15 +68,26 @@ export function YouTubePlaylistCard() {
     enabled: data?.status === 'connected' && (data.playlist === null || changing),
   })
 
+  // The videos are listed once a playlist is chosen and the link is still connected.
+  const itemsQuery = useQuery({
+    queryKey: ['youtube_playlist_items'],
+    queryFn: getYouTubePlaylistItems,
+    retry: false,
+    enabled: data?.status === 'connected' && data.playlist !== null,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
+
   const queryClient = useQueryClient()
   const playlistsStatus = playlistsQuery.data?.youtube_connection.status
-  // The status query is the one place the status is read from, so a lost answer from the playlists asks it to be
-  // read again rather than setting a second status here.
+  const itemsStatus = itemsQuery.data?.youtube_connection.status
+  // The status query is the one place the status is read from, so a lost answer from the playlists or the videos asks
+  // it to be read again rather than setting a second status here.
   useEffect(() => {
-    if (playlistsStatus === 'lost') {
+    if (playlistsStatus === 'lost' || itemsStatus === 'lost') {
       queryClient.invalidateQueries({ queryKey: ['youtube_connection'] })
     }
-  }, [playlistsStatus, queryClient])
+  }, [playlistsStatus, itemsStatus, queryClient])
 
   // The chosen playlist replaces the connection in the cache, so the card shows it without another request.
   const choose = useMutation({
@@ -135,6 +147,45 @@ export function YouTubePlaylistCard() {
           <p role="alert" className="text-destructive">
             Couldn't load your playlists. Try again.
           </p>
+        )}
+        {itemsQuery.isError && (
+          <p role="alert" className="text-destructive">
+            Couldn't load the videos. Try reloading the page.
+          </p>
+        )}
+        {itemsQuery.data?.videos && itemsQuery.data.videos.items.length === 0 && (
+          <p className="text-muted-foreground">This playlist has no videos.</p>
+        )}
+        {itemsQuery.data?.videos && itemsQuery.data.videos.items.length > 0 && (
+          <ul aria-label="Videos" className="grid gap-1">
+            {itemsQuery.data.videos.items.map(({ id, video_id, title }) => (
+              <li key={id}>
+                {video_id === null ? (
+                  <span className="min-w-0 break-words">{title}</span>
+                ) : (
+                  <a
+                    href={`https://www.youtube.com/watch?v=${encodeURIComponent(video_id)}`}
+                    className="underline"
+                  >
+                    <span className="min-w-0 break-words">{title}</span>
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {itemsQuery.data?.videos && itemsQuery.data.videos.total_count > itemsQuery.data.videos.items.length && (
+          <p className="text-muted-foreground text-sm">
+            Showing the first {itemsQuery.data.videos.items.length} of {itemsQuery.data.videos.total_count} videos.
+          </p>
+        )}
+        {itemsQuery.data?.playlist?.available === false && (
+          <div className="flex items-center justify-between gap-3">
+            <p>This playlist is no longer available on YouTube.</p>
+            <Button variant="outline" size="sm" onClick={() => setChanging(true)}>
+              Choose another playlist
+            </Button>
+          </div>
         )}
         {choose.isError && <p role="alert" className="text-destructive">Couldn't choose that playlist. Try again.</p>}
         {playlistsQuery.data?.playlists?.length === 0 && (

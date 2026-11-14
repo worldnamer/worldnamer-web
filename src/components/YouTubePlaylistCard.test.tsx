@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
@@ -333,6 +333,13 @@ describe('YouTubePlaylistCard', () => {
           ],
         }),
       ),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 0, items: [] },
+        }),
+      ),
       http.put(`${API_BASE}/youtube_connection/playlist`, async ({ request }) => {
         chosenBody = await request.json()
         return HttpResponse.json(youtubeConnectionBody('connected', { id: 'PLb', title: 'Music' }))
@@ -351,6 +358,13 @@ describe('YouTubePlaylistCard', () => {
     let playlistRequests = 0
     server.use(
       ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 0, items: [] },
+        }),
+      ),
       http.get(`${API_BASE}/youtube_connection/playlists`, () => {
         playlistRequests += 1
         return HttpResponse.json({ youtube_connection: { status: 'connected' }, playlists: [] })
@@ -374,6 +388,13 @@ describe('YouTubePlaylistCard', () => {
             { id: 'PLa', title: 'Cooking' },
             { id: 'PLb', title: 'Music' },
           ],
+        }),
+      ),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 0, items: [] },
         }),
       ),
       http.put(`${API_BASE}/youtube_connection/playlist`, async ({ request }) => {
@@ -405,6 +426,13 @@ describe('YouTubePlaylistCard', () => {
           ],
         }),
       ),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 0, items: [] },
+        }),
+      ),
       http.put(`${API_BASE}/youtube_connection/playlist`, () =>
         HttpResponse.json(errorBody('invalid_playlist', 'x'), { status: 422 }),
       ),
@@ -419,5 +447,174 @@ describe('YouTubePlaylistCard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't choose that playlist. Try again.")
     expect(screen.getByRole('list', { name: 'Your playlists' })).toBeInTheDocument()
     expect(screen.getByText('Playlist: Music')).toBeInTheDocument()
+  })
+
+  it('lists the videos in playlist order with links to YouTube', async () => {
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: {
+            total_count: 2,
+            items: [
+              { id: 'i1', video_id: 'dQw4w9WgXcQ', title: 'First', position: 0 },
+              { id: 'i2', video_id: 'abcdefghijk', title: 'Second', position: 1 },
+            ],
+          },
+        }),
+      ),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual(['First', 'Second'])
+    expect(within(list).getByRole('link', { name: 'First' })).toHaveAttribute(
+      'href',
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    )
+    expect(within(list).getByRole('link', { name: 'Second' })).toHaveAttribute(
+      'href',
+      'https://www.youtube.com/watch?v=abcdefghijk',
+    )
+  })
+
+  it('says This playlist has no videos. for an empty playlist', async () => {
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 0, items: [] },
+        }),
+      ),
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+    )
+    renderCard()
+
+    expect(await screen.findByText('This playlist has no videos.')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Videos' })).not.toBeInTheDocument()
+  })
+
+  it('says the playlist is no longer available and offers Choose another playlist', async () => {
+    const user = userEvent.setup()
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: false },
+          videos: null,
+        }),
+      ),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlists: [{ id: 'PLa', title: 'Cooking' }],
+        }),
+      ),
+    )
+    renderCard()
+
+    expect(await screen.findByText('This playlist is no longer available on YouTube.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Choose another playlist' }))
+
+    expect(await screen.findByRole('list', { name: 'Your playlists' })).toBeInTheDocument()
+  })
+
+  it('shows an alert and no list when the videos cannot be loaded', async () => {
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json(errorBody('youtube_unavailable', 'x'), { status: 502 }),
+      ),
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+    )
+    renderCard()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't load the videos. Try reloading the page.",
+    )
+    expect(screen.queryByRole('list', { name: 'Videos' })).not.toBeInTheDocument()
+  })
+
+  it('shows Showing the first 10 of 73 videos. for a longer playlist', async () => {
+    const tenVideos = Array.from({ length: 10 }, (_, index) => ({
+      id: `i${index}`,
+      video_id: `video${index}`,
+      title: `Video ${index}`,
+      position: index,
+    }))
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 73, items: tenVideos },
+        }),
+      ),
+    )
+    renderCard()
+    expect(await screen.findByText('Showing the first 10 of 73 videos.')).toBeInTheDocument()
+
+    // A playlist whose total equals the number of items shows no such line.
+    cleanup()
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: 10, items: tenVideos },
+        }),
+      ),
+    )
+    renderCard()
+    expect(await screen.findByRole('list', { name: 'Videos' })).toBeInTheDocument()
+    expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument()
+  })
+
+  it('shows a title without a link when the video id is null', async () => {
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: {
+            total_count: 1,
+            items: [{ id: 'i1', video_id: null, title: 'Private video', position: 0 }],
+          },
+        }),
+      ),
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    expect(within(list).getByText('Private video')).toBeInTheDocument()
+    expect(within(list).queryByRole('link', { name: 'Private video' })).not.toBeInTheDocument()
+  })
+
+  it('shows Connect and the lost line when the videos answer says lost', async () => {
+    let connectionCalls = 0
+    server.use(
+      http.get(`${API_BASE}/youtube_connection`, () => {
+        connectionCalls += 1
+        if (connectionCalls === 1) {
+          return HttpResponse.json({
+            youtube_connection: { status: 'connected', playlist: { id: 'PLb', title: 'Music' } },
+          })
+        }
+        return HttpResponse.json({ youtube_connection: { status: 'lost', playlist: null } })
+      }),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({ youtube_connection: { status: 'lost' }, playlist: null, videos: null }),
+      ),
+    )
+    renderCard()
+    expect(await screen.findByText('The connection to YouTube was lost.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
+    expect(connectionCalls).toBeGreaterThanOrEqual(2)
   })
 })
