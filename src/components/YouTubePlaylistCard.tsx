@@ -1,9 +1,15 @@
-import { useQuery } from '@tanstack/react-query'
-import { getYouTubeConnection } from '@/api/youtubeConnection'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { getYouTubeConnection, startYouTubeAuthorization } from '@/api/youtubeConnection'
 import { Button } from '@/components/ui/button'
+import { navigateTo } from '@/lib/externalNavigation'
 
 // The YouTube card: the state of the YouTube link and, once it is connected, the chosen playlist.
 export function YouTubePlaylistCard() {
+  const start = useMutation({
+    mutationFn: startYouTubeAuthorization,
+    onSuccess: (url) => navigateTo(url),
+  })
+
   const { data, isPending, isError } = useQuery({
     queryKey: ['youtube_connection'],
     queryFn: getYouTubeConnection,
@@ -28,8 +34,17 @@ export function YouTubePlaylistCard() {
           </p>
         )}
         {(data?.status === 'not_connected' || data?.status === 'lost') && (
-          <Button className="justify-self-start">Connect YouTube</Button>
+          /* After success the page is leaving for Google, so the button stays disabled;
+             a second click would start a second authorization flow. */
+          <Button
+            className="justify-self-start"
+            disabled={start.isPending || start.isSuccess}
+            onClick={() => start.mutate()}
+          >
+            Connect YouTube
+          </Button>
         )}
+        {start.isError && <p role="alert" className="text-destructive">Couldn't start connecting. Try again.</p>}
         {data?.status === 'connected' && <p>YouTube connected.</p>}
       </div>
     </section>

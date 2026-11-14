@@ -408,7 +408,12 @@ export function youtubeHandlers(status: MockYouTubeStatus = 'not_connected', pla
     return HttpResponse.json(youtubeConnectionBody(status, playlist), { headers: noStore })
   })
 
-  return [connection]
+  const start = http.post(`${API_BASE}/youtube_connection/authorization`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201, headers: noStore })
+  })
+
+  return [connection, start]
 }
 
 // The recipes. recipesHandlers(initial) keeps one in-memory list that its handlers share. Like the API, the list answers

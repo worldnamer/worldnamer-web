@@ -15,3 +15,13 @@ export async function getYouTubeConnection(): Promise<YouTubeConnection> {
   const body = (await response.json()) as { youtube_connection: YouTubeConnection }
   return body.youtube_connection
 }
+
+// POST /youtube_connection/authorization. The API answers with the Google consent address and sets the
+// wn_youtube_oauth cookie, which is why the request must send credentials; the cookie is what lets the callback
+// check that the consent started in this browser. Rejects with ApiError on a non-2xx answer.
+export async function startYouTubeAuthorization(): Promise<string> {
+  const response = await apiFetch('/youtube_connection/authorization', { method: 'POST', credentials: 'include' })
+  if (!response.ok) throw await apiErrorFrom(response)
+  const body = (await response.json()) as { authorization_url: string }
+  return body.authorization_url
+}

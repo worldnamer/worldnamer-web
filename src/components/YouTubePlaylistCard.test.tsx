@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
-import { API_BASE, errorBody, REFRESH_TOKEN, youtubeHandlers } from '@/mocks/handlers'
+import { navigateTo } from '@/lib/externalNavigation'
+import { API_BASE, CONSENT_URL, errorBody, REFRESH_TOKEN, youtubeHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 import { YouTubePlaylistCard } from './YouTubePlaylistCard'
 
@@ -110,5 +112,70 @@ describe('YouTubePlaylistCard', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(requests).toBe(1)
+  })
+
+  it('starts connecting with credentials included and goes to Google\'s address', async () => {
+    const user = userEvent.setup()
+    // MSW under Node always reports request.credentials as 'same-origin', so assert on what is passed to fetch itself.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    server.use(...youtubeHandlers('not_connected'))
+    renderCard()
+    await settled()
+
+    await user.click(screen.getByRole('button', { name: 'Connect YouTube' }))
+
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_BASE}/youtube_connection/authorization`,
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    )
+  })
+
+  it('disables Connect YouTube while starting and after success', async () => {
+    const user = userEvent.setup()
+    // The start handler waits until the test releases it, so the pending state can be checked.
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      ...youtubeHandlers('not_connected'),
+      http.post(`${API_BASE}/youtube_connection/authorization`, async () => {
+        await gate
+        return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201 })
+      }),
+    )
+    renderCard()
+    await settled()
+
+    const button = screen.getByRole('button', { name: 'Connect YouTube' })
+    await user.click(button)
+    expect(button).toBeDisabled()
+
+    release()
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+    expect(button).toBeDisabled()
+  })
+
+  it('shows an alert and stays on the page when the start fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(navigateTo).mockClear()
+    // Listed before the shared handlers so this answer is the one MSW uses for the start request.
+    server.use(
+      http.post(`${API_BASE}/youtube_connection/authorization`, () =>
+        HttpResponse.json(errorBody('internal', 'x'), { status: 500 }),
+      ),
+      ...youtubeHandlers('not_connected'),
+    )
+    renderCard()
+    await settled()
+
+    await user.click(screen.getByRole('button', { name: 'Connect YouTube' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't start connecting. Try again.",
+    )
+    expect(navigateTo).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeEnabled()
   })
 })
