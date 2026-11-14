@@ -1,15 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { Trash2Icon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
+import { ApiError } from '@/api/client'
 import {
   chooseYouTubePlaylist,
   getYouTubeConnection,
   getYouTubePlaylistItems,
   getYouTubePlaylists,
+  removeYouTubePlaylistItem,
   startYouTubeAuthorization,
+  type YouTubeItemsResponse,
+  type YouTubeVideo,
 } from '@/api/youtubeConnection'
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
+import { useConfirmDelete } from '@/lib/useConfirmDelete'
 
 // The API sends the browser back to the site with ?youtube=connected, cancelled or failed after Google's consent
 // screen. Only the two that need a message are kept; "connected" needs none, because the status query says so, and
@@ -98,10 +105,42 @@ export function YouTubePlaylistCard() {
     },
   })
 
+  // Each video has a Remove button that asks first; the one dialog below holds the video asked about. The video is only
+  // taken out of this playlist, never deleted from YouTube. On success the row is dropped from the cached list and the
+  // total lowered, without asking for the list again. After a confirmed removal the row's button is gone, so focus goes
+  // to the card's heading; after Cancel it goes back to the button that opened the dialog.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const del = useConfirmDelete<YouTubeVideo>(() => headingRef.current)
+  const [removeFailed, setRemoveFailed] = useState<string | null>(null)
+  const remove = useMutation({
+    mutationFn: (video: YouTubeVideo) => removeYouTubePlaylistItem(video.id),
+    onMutate: () => setRemoveFailed(null),
+    onSuccess: (_result, video) => {
+      queryClient.setQueryData<YouTubeItemsResponse>(['youtube_playlist_items'], (old) =>
+        old?.videos
+          ? {
+              ...old,
+              videos: {
+                total_count: Math.max(0, old.videos.total_count - 1),
+                items: old.videos.items.filter((item) => item.id !== video.id),
+              },
+            }
+          : old,
+      )
+    },
+    onError: (error, video) => {
+      setRemoveFailed(video.title)
+      // The link is not connected any more, so the status is read again and the card shows Connect.
+      if (error instanceof ApiError && error.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['youtube_connection'] })
+      }
+    },
+  })
+
   return (
     <section aria-labelledby="youtube-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
-        <h2 id="youtube-heading" className="font-display text-xl tracking-wide">
+        <h2 ref={headingRef} id="youtube-heading" tabIndex={-1} className="font-display text-xl tracking-wide">
           YouTube
         </h2>
       </div>
@@ -158,8 +197,10 @@ export function YouTubePlaylistCard() {
         )}
         {itemsQuery.data?.videos && itemsQuery.data.videos.items.length > 0 && (
           <ul aria-label="Videos" className="grid gap-1">
-            {itemsQuery.data.videos.items.map(({ id, video_id, title }) => (
-              <li key={id}>
+            {itemsQuery.data.videos.items.map((video) => {
+              const { id, video_id, title } = video
+              return (
+              <li key={id} className="flex items-center justify-between gap-3">
                 {video_id === null ? (
                   <span className="min-w-0 break-words">{title}</span>
                 ) : (
@@ -170,9 +211,24 @@ export function YouTubePlaylistCard() {
                     <span className="min-w-0 break-words">{title}</span>
                   </a>
                 )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label={`Remove ${title}`}
+                  onClick={(event) => del.ask(video, event.currentTarget)}
+                >
+                  <Trash2Icon />
+                </Button>
               </li>
-            ))}
+              )
+            })}
           </ul>
+        )}
+        {removeFailed !== null && (
+          <p role="alert" className="text-destructive">
+            Couldn't remove {removeFailed}. Try again.
+          </p>
         )}
         {itemsQuery.data?.videos && itemsQuery.data.videos.total_count > itemsQuery.data.videos.items.length && (
           <p className="text-muted-foreground text-sm">
@@ -210,6 +266,17 @@ export function YouTubePlaylistCard() {
           </ul>
         )}
       </div>
+      <ConfirmDeleteDialog
+        open={del.open}
+        onOpenChange={del.setOpen}
+        title={`Remove "${del.target?.title ?? ''}" from this playlist?`}
+        actionLabel="Remove"
+        description="The video stays on YouTube."
+        onConfirm={() => {
+          if (del.target) remove.mutate(del.target)
+        }}
+        focusAfterClose={del.focusAfterClose}
+      />
     </section>
   )
 }

@@ -68,3 +68,11 @@ export async function getYouTubePlaylistItems(): Promise<YouTubeItemsResponse> {
   if (!response.ok) throw await apiErrorFrom(response)
   return (await response.json()) as YouTubeItemsResponse
 }
+
+// DELETE /youtube_connection/playlist/items/:id takes one video out of the chosen playlist and answers 204 with no body.
+// `id` is the playlist item's id from the videos list, not the video's own id. The video itself stays on YouTube.
+// Rejects with ApiError otherwise; a 409 means the YouTube link is not connected (or was lost).
+export async function removeYouTubePlaylistItem(id: string): Promise<void> {
+  const response = await apiFetch(`/youtube_connection/playlist/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!response.ok) throw await apiErrorFrom(response)
+}

@@ -617,4 +617,106 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
     expect(connectionCalls).toBeGreaterThanOrEqual(2)
   })
+
+  describe('removing a video', () => {
+    const videos = [
+      { id: 'i1', video_id: 'dQw4w9WgXcQ', title: 'First', position: 0 },
+      { id: 'i/2', video_id: 'abcdefghijk', title: 'Second', position: 1 },
+    ]
+
+    // Answers the connection and the videos, and records each DELETE; `answer` makes the DELETE's response.
+    function useVideos(answer: () => Response, total = 2) {
+      const deletes: string[] = []
+      let itemsCalls = 0
+      server.use(
+        ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
+        http.get(`${API_BASE}/youtube_connection/playlist/items`, () => {
+          itemsCalls += 1
+          return HttpResponse.json({
+            youtube_connection: { status: 'connected' },
+            playlist: { id: 'PLb', title: 'Music', available: true },
+            videos: { total_count: total, items: videos },
+          })
+        }),
+        http.delete(`${API_BASE}/youtube_connection/playlist/items/:id`, ({ request }) => {
+          deletes.push(new URL(request.url).pathname)
+          return answer()
+        }),
+      )
+      return { deletes, itemsCalls: () => itemsCalls }
+    }
+
+    const noContent = () => new HttpResponse(null, { status: 204 })
+
+    it('asks first, naming the video, and sends nothing on Cancel', async () => {
+      const { deletes } = useVideos(noContent)
+      const user = userEvent.setup()
+      renderCard()
+
+      const button = await screen.findByRole('button', { name: 'Remove First' })
+      await user.click(button)
+      const dialog = await screen.findByRole('alertdialog', { name: 'Remove "First" from this playlist?' })
+      expect(within(dialog).getByText('The video stays on YouTube.')).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+      expect(deletes).toEqual([])
+      expect(screen.getByRole('button', { name: 'Remove First' })).toHaveFocus()
+    })
+
+    it('removes the row and lowers the count from the cache without fetching the videos again', async () => {
+      const { deletes, itemsCalls } = useVideos(noContent, 12)
+      const user = userEvent.setup()
+      renderCard()
+
+      expect(await screen.findByText('Showing the first 2 of 12 videos.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Remove Second' }))
+      const dialog = await screen.findByRole('alertdialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
+
+      await vi.waitFor(() => expect(screen.queryByText('Second')).not.toBeInTheDocument())
+      expect(deletes).toEqual(['/api/v1/youtube_connection/playlist/items/i%2F2'])
+      expect(screen.getByText('First')).toBeInTheDocument()
+      expect(screen.getByText('Showing the first 1 of 11 videos.')).toBeInTheDocument()
+      expect(itemsCalls()).toBe(1)
+      expect(screen.getByRole('heading', { name: 'YouTube' })).toHaveFocus()
+    })
+
+    it('keeps the row and shows an alert when the removal fails', async () => {
+      useVideos(() => HttpResponse.json(errorBody('youtube_unavailable', 'x'), { status: 502 }))
+      const user = userEvent.setup()
+      renderCard()
+
+      await user.click(await screen.findByRole('button', { name: 'Remove First' }))
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't remove First. Try again.")
+      expect(screen.getByText('First')).toBeInTheDocument()
+    })
+
+    it('shows Connect when the removal answers 409', async () => {
+      let connectionCalls = 0
+      const { deletes } = useVideos(() => HttpResponse.json(errorBody('youtube_not_connected', 'x'), { status: 409 }))
+      server.use(
+        http.get(`${API_BASE}/youtube_connection`, () => {
+          connectionCalls += 1
+          return HttpResponse.json(
+            connectionCalls === 1
+              ? youtubeConnectionBody('connected', { id: 'PLb', title: 'Music' })
+              : youtubeConnectionBody('lost'),
+          )
+        }),
+      )
+      const user = userEvent.setup()
+      renderCard()
+
+      await user.click(await screen.findByRole('button', { name: 'Remove First' }))
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
+
+      expect(await screen.findByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
+      expect(deletes).toHaveLength(1)
+      expect(connectionCalls).toBeGreaterThanOrEqual(2)
+    })
+  })
 })
