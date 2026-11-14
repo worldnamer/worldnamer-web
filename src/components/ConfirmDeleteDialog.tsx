@@ -10,19 +10,24 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-// "Delete this?" with Cancel and Delete. The dialog is controlled: the caller holds `open` and the thing being deleted,
-// so the title keeps its text while the dialog fades out, and the caller shows any error. `onConfirm` runs when Delete is
-// pressed; `focusAfterClose` says where focus goes once the dialog has closed, given whether Delete was pressed.
+// "Delete this?" with Cancel and a confirm button. The dialog is controlled: the caller holds `open` and the thing being
+// deleted, so the title keeps its text while the dialog fades out, and the caller shows any error. `onConfirm` runs when
+// the confirm button is pressed; `focusAfterClose` says where focus goes once the dialog has closed, given whether it was
+// pressed. `actionLabel` and `description` default to the delete wording.
 export function ConfirmDeleteDialog({
   open,
   onOpenChange,
   title,
+  actionLabel = 'Delete',
+  description = "This can't be undone.",
   onConfirm,
   focusAfterClose,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
+  actionLabel?: string
+  description?: string
   onConfirm: () => void
   focusAfterClose: (confirmed: boolean) => HTMLElement | null
 }) {
@@ -43,7 +48,7 @@ export function ConfirmDeleteDialog({
       >
         <AlertDialogHeader>
           <AlertDialogTitle className="font-display text-xl tracking-wide">{title}</AlertDialogTitle>
-          <AlertDialogDescription>This can't be undone.</AlertDialogDescription>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -54,7 +59,7 @@ export function ConfirmDeleteDialog({
               onConfirm()
             }}
           >
-            Delete
+            {actionLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

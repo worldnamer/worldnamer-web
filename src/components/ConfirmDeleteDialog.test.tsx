@@ -6,7 +6,15 @@ import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 
-function Caller({ onConfirm }: { onConfirm: () => void }) {
+function Caller({
+  onConfirm,
+  actionLabel,
+  description,
+}: {
+  onConfirm: () => void
+  actionLabel?: string
+  description?: string
+}) {
   const [open, setOpen] = useState(false)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -20,6 +28,8 @@ function Caller({ onConfirm }: { onConfirm: () => void }) {
         open={open}
         onOpenChange={setOpen}
         title="Delete 'Stretch'?"
+        actionLabel={actionLabel}
+        description={description}
         onConfirm={onConfirm}
         focusAfterClose={(confirmed) => (confirmed ? confirmRef.current : cancelRef.current)}
       />
@@ -42,6 +52,29 @@ describe('ConfirmDeleteDialog', () => {
     expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it("keeps Delete and This can't be undone. by default", async () => {
+    const user = userEvent.setup()
+    render(<Caller onConfirm={vi.fn()} />)
+
+    const dialog = await openDialog(user)
+
+    expect(within(dialog).getByText("This can't be undone.")).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('uses the given action label and description', async () => {
+    const user = userEvent.setup()
+    render(<Caller onConfirm={vi.fn()} actionLabel="Remove" description="The video stays on YouTube." />)
+
+    const dialog = await openDialog(user)
+
+    expect(within(dialog).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+    expect(within(dialog).getByText('The video stays on YouTube.')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByText("This can't be undone.")).not.toBeInTheDocument()
   })
 
   it('calls onConfirm and closes when Delete is pressed', async () => {

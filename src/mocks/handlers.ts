@@ -393,6 +393,29 @@ export function googleCalendarHandlers(status: MockConnectionStatus = 'not_conne
   return [events, start]
 }
 
+// The YouTube playlist link. youtubeHandlers(status, playlist) answers GET /youtube_connection with the given status and
+// playlist, as the API does. Opt-in like the others: server.use(...youtubeHandlers('connected', { id: 'PL1', title: 'Watch later' })).
+export type MockYouTubeStatus = 'not_connected' | 'connected' | 'lost'
+export type MockPlaylist = { id: string; title: string }
+
+export function youtubeConnectionBody(status: MockYouTubeStatus, playlist: MockPlaylist | null = null) {
+  return { youtube_connection: { status, playlist } }
+}
+
+export function youtubeHandlers(status: MockYouTubeStatus = 'not_connected', playlist: MockPlaylist | null = null) {
+  const connection = http.get(`${API_BASE}/youtube_connection`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json(youtubeConnectionBody(status, playlist), { headers: noStore })
+  })
+
+  const start = http.post(`${API_BASE}/youtube_connection/authorization`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201, headers: noStore })
+  })
+
+  return [connection, start]
+}
+
 // The recipes. recipesHandlers(initial) keeps one in-memory list that its handlers share. Like the API, the list answers
 // only id and title, ordered by title without regard to case and then by id; show answers the whole recipe, with the
 // fields left out here filled as the API does ("" and null), and the 404 a missing or someone else's recipe gets for any

@@ -88,6 +88,17 @@ describe('section tabs', () => {
     expect(main.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('links YouTube in the section tabs', async () => {
+    setSessionFlag()
+    server.use(refreshHandler)
+    renderLayout('/resume')
+
+    const tabs = await screen.findByRole('navigation', { name: 'Sections' })
+    const link = screen.getByRole('link', { name: 'YouTube' })
+    expect(tabs).toContainElement(link)
+    expect(link).toHaveAttribute('href', '/youtube')
+  })
+
   it('is absent when logged out', () => {
     renderLayout('/')
 
