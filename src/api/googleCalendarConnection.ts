@@ -41,8 +41,8 @@ export async function getTodayEvents(): Promise<TodayEventsResponse> {
 }
 
 // POST /google_calendar_connection/authorization starts the connect flow. Resolves Google's consent address, which the
-// caller sends the browser to. credentials: 'include' is required: the API answers with the wn_google_oauth cookie that
-// ties the flow to this browser, and a cross-origin fetch ignores Set-Cookie without it.
+// caller sends the browser to. credentials: 'include' is required: the API answers with the wn_google_calendar_oauth
+// cookie that ties the flow to this browser, and a cross-origin fetch ignores Set-Cookie without it.
 export async function startGoogleCalendarAuthorization(): Promise<string> {
   const response = await apiFetch('/google_calendar_connection/authorization', {
     method: 'POST',
