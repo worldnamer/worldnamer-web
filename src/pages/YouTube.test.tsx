@@ -6,7 +6,7 @@ import App from '@/App'
 import { setSessionFlag } from '@/auth/sessionFlag'
 import { clearAccessToken } from '@/auth/tokenStore'
 import { queryClient } from '@/lib/queryClient'
-import { refreshHandler } from '@/mocks/handlers'
+import { refreshHandler, youtubeHandlers } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
 
 beforeEach(() => {
@@ -28,7 +28,7 @@ function renderApp(route: string) {
 describe('the YouTube page', () => {
   it('renders the YouTube page for a logged-in user', async () => {
     setSessionFlag()
-    server.use(refreshHandler)
+    server.use(refreshHandler, ...youtubeHandlers())
     renderApp('/youtube')
 
     expect(await screen.findByRole('region', { name: 'YouTube page' })).toBeInTheDocument()
