@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2Icon } from 'lucide-react'
+import { ExternalLinkIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { ApiError } from '@/api/client'
@@ -173,7 +173,6 @@ export function YouTubePlaylistCard() {
           </p>
         )}
         {start.isError && <p role="alert" className="text-destructive">Couldn't start connecting. Try again.</p>}
-        {data?.status === 'connected' && <p>YouTube connected.</p>}
         {data?.playlist && (
           <div className="flex items-center justify-between gap-3">
             <p>Playlist: {data.playlist.title}</p>
@@ -201,16 +200,22 @@ export function YouTubePlaylistCard() {
               const { id, video_id, title } = video
               return (
               <li key={id} className="flex items-center justify-between gap-3">
-                {video_id === null ? (
-                  <span className="min-w-0 break-words">{title}</span>
-                ) : (
-                  <a
-                    href={`https://www.youtube.com/watch?v=${encodeURIComponent(video_id)}`}
-                    className="underline"
-                  >
-                    <span className="min-w-0 break-words">{title}</span>
-                  </a>
-                )}
+                {/* The title is plain text, so it can later open the video's summary. The way to the video itself is the
+                    link button beside Remove, which opens YouTube in a new tab. */}
+                <span className="min-w-0 break-words">{title}</span>
+                <span className="flex shrink-0 items-center">
+                  {video_id !== null && (
+                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" asChild>
+                      <a
+                        href={`https://www.youtube.com/watch?v=${encodeURIComponent(video_id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Open ${title} on YouTube`}
+                      >
+                        <ExternalLinkIcon />
+                      </a>
+                    </Button>
+                  )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -220,6 +225,7 @@ export function YouTubePlaylistCard() {
                 >
                   <Trash2Icon />
                 </Button>
+                </span>
               </li>
               )
             })}

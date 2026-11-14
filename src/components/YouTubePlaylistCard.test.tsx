@@ -101,11 +101,11 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.getByRole('alert')).toHaveTextContent("YouTube wasn't connected.")
   })
 
-  it('says YouTube connected. when connected', async () => {
+  it('does not offer Connect YouTube when connected', async () => {
     server.use(...youtubeHandlers('connected'))
     renderCard()
     await settled()
-    expect(screen.getByText('YouTube connected.')).toBeInTheDocument()
+    expect(screen.queryByText('YouTube connected.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Connect YouTube' })).not.toBeInTheDocument()
   })
 
@@ -449,7 +449,7 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.getByText('Playlist: Music')).toBeInTheDocument()
   })
 
-  it('lists the videos in playlist order with links to YouTube', async () => {
+  it('lists the videos in playlist order with a button to open each on YouTube', async () => {
     server.use(
       ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }),
       http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
@@ -471,11 +471,11 @@ describe('YouTubePlaylistCard', () => {
     const list = await screen.findByRole('list', { name: 'Videos' })
     const items = within(list).getAllByRole('listitem')
     expect(items.map((item) => item.textContent)).toEqual(['First', 'Second'])
-    expect(within(list).getByRole('link', { name: 'First' })).toHaveAttribute(
+    expect(within(list).getByRole('link', { name: 'Open First on YouTube' })).toHaveAttribute(
       'href',
       'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     )
-    expect(within(list).getByRole('link', { name: 'Second' })).toHaveAttribute(
+    expect(within(list).getByRole('link', { name: 'Open Second on YouTube' })).toHaveAttribute(
       'href',
       'https://www.youtube.com/watch?v=abcdefghijk',
     )
@@ -575,7 +575,7 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument()
   })
 
-  it('shows a title without a link when the video id is null', async () => {
+  it('shows a title without an open link when the video id is null', async () => {
     server.use(
       http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
         HttpResponse.json({
@@ -593,7 +593,7 @@ describe('YouTubePlaylistCard', () => {
 
     const list = await screen.findByRole('list', { name: 'Videos' })
     expect(within(list).getByText('Private video')).toBeInTheDocument()
-    expect(within(list).queryByRole('link', { name: 'Private video' })).not.toBeInTheDocument()
+    expect(within(list).queryByRole('link', { name: 'Open Private video on YouTube' })).not.toBeInTheDocument()
   })
 
   it('shows Connect and the lost line when the videos answer says lost', async () => {
