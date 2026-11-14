@@ -1,3 +1,5 @@
+import { Link } from 'react-router'
+
 const links = [
   { label: 'LinkedIn', href: 'https://linkedin.com/in/worldnamer' },
   { label: 'GitHub', href: 'https://github.com/worldnamer' },
@@ -28,6 +30,9 @@ export function Footer() {
               {link.label}
             </a>
           ))}
+          <Link to="/privacy" className="text-muted-foreground transition-colors hover:text-foreground">
+            Privacy
+          </Link>
         </nav>
       </div>
     </footer>
