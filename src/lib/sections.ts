@@ -2,4 +2,5 @@
 export const sections = [
   { label: 'Home', to: '/' },
   { label: 'Recipes', to: '/recipes' },
+  { label: 'YouTube', to: '/youtube' },
 ]
