@@ -79,6 +79,13 @@ describe('YouTubePlaylistCard', () => {
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
   })
 
+  it("shows YouTube wasn't connected. after a cancelled connect", async () => {
+    server.use(...youtubeHandlers('not_connected'))
+    renderCard('/youtube?youtube=cancelled')
+    await settled()
+    expect(screen.getByRole('alert')).toHaveTextContent("YouTube wasn't connected.")
+  })
+
   it('says YouTube connected. when connected', async () => {
     server.use(...youtubeHandlers('connected'))
     renderCard()
@@ -177,5 +184,54 @@ describe('YouTubePlaylistCard', () => {
     )
     expect(navigateTo).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeEnabled()
+  })
+
+  it("shows Couldn't connect YouTube. Try again. after a failed connect", async () => {
+    server.use(...youtubeHandlers('not_connected'))
+    renderCard('/youtube?youtube=failed')
+    await settled()
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't connect YouTube. Try again.")
+  })
+
+  it('clears the outcome message when Connect is clicked again', async () => {
+    const user = userEvent.setup()
+    // The start handler waits until the test releases it, so the message is checked while the start is in flight.
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      ...youtubeHandlers('not_connected'),
+      http.post(`${API_BASE}/youtube_connection/authorization`, async () => {
+        await gate
+        return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201 })
+      }),
+    )
+    renderCard('/youtube?youtube=failed')
+    await settled()
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't connect YouTube. Try again.")
+
+    await user.click(screen.getByRole('button', { name: 'Connect YouTube' }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    release()
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith(CONSENT_URL))
+  })
+
+  it('removes the youtube parameter from the address and keeps the others', async () => {
+    server.use(...youtubeHandlers('not_connected'))
+    renderCard('/youtube?youtube=cancelled&keep=1')
+    await settled()
+    const address = screen.getByLabelText('Address')
+    expect(address.textContent).toBe('/youtube?keep=1')
+    expect(address).toHaveAttribute('data-navigation', 'REPLACE')
+  })
+
+  it('ignores an unknown youtube value', async () => {
+    server.use(...youtubeHandlers('not_connected'))
+    renderCard('/youtube?youtube=weird')
+    await settled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
   })
 })
