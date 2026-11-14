@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
@@ -100,6 +100,37 @@ describe('YouTubePlaylistCard', () => {
     await settled()
     expect(screen.getByText('YouTube connected.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Connect YouTube' })).not.toBeInTheDocument()
+  })
+
+  it("lists the user's playlists when connected with none chosen", async () => {
+    server.use(
+      ...youtubeHandlers('connected'),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlists: [
+            { id: 'PLa', title: 'Cooking' },
+            { id: 'PLb', title: 'Music' },
+          ],
+        }),
+      ),
+    )
+    renderCard()
+    const list = await screen.findByRole('list', { name: 'Your playlists' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Cooking', 'Music'])
+  })
+
+  it('says You have no playlists on YouTube. when there are none', async () => {
+    server.use(
+      ...youtubeHandlers('connected'),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({ youtube_connection: { status: 'connected' }, playlists: [] }),
+      ),
+    )
+    renderCard()
+    expect(await screen.findByText('You have no playlists on YouTube.')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Your playlists' })).not.toBeInTheDocument()
   })
 
   it('sends no request when the window regains focus after the data is stale', async () => {
@@ -249,5 +280,35 @@ describe('YouTubePlaylistCard', () => {
     await settled()
     expect(screen.getByRole('alert')).toHaveTextContent("Couldn't connect YouTube. Try again.")
     expect(screen.queryByText('The connection to YouTube was lost.')).not.toBeInTheDocument()
+  })
+
+  it("shows Couldn't load your playlists. Try again. when loading fails", async () => {
+    server.use(
+      ...youtubeHandlers('connected'),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json(errorBody('youtube_unavailable', 'x'), { status: 502 }),
+      ),
+    )
+    renderCard()
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your playlists. Try again.")
+  })
+
+  it('shows Connect and the lost line when the playlists answer says lost', async () => {
+    let connectionCalls = 0
+    server.use(
+      http.get(`${API_BASE}/youtube_connection`, () => {
+        connectionCalls += 1
+        const status = connectionCalls === 1 ? 'connected' : 'lost'
+        return HttpResponse.json({ youtube_connection: { status, playlist: null } })
+      }),
+      http.get(`${API_BASE}/youtube_connection/playlists`, () =>
+        HttpResponse.json({ youtube_connection: { status: 'lost' }, playlists: null }),
+      ),
+      ...youtubeHandlers('connected'),
+    )
+    renderCard()
+    expect(await screen.findByText('The connection to YouTube was lost.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect YouTube' })).toBeInTheDocument()
+    expect(connectionCalls).toBeGreaterThanOrEqual(2)
   })
 })

@@ -1,7 +1,7 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import { getYouTubeConnection, startYouTubeAuthorization } from '@/api/youtubeConnection'
+import { getYouTubeConnection, getYouTubePlaylists, startYouTubeAuthorization } from '@/api/youtubeConnection'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
 
@@ -52,6 +52,24 @@ export function YouTubePlaylistCard() {
     refetchOnWindowFocus: false,
   })
 
+  // The playlists are only listed while the user has a link and has not yet chosen one to show.
+  const playlistsQuery = useQuery({
+    queryKey: ['youtube_playlists'],
+    queryFn: getYouTubePlaylists,
+    retry: false,
+    enabled: data?.status === 'connected' && data.playlist === null,
+  })
+
+  const queryClient = useQueryClient()
+  const playlistsStatus = playlistsQuery.data?.youtube_connection.status
+  // The status query is the one place the status is read from, so a lost answer from the playlists asks it to be
+  // read again rather than setting a second status here.
+  useEffect(() => {
+    if (playlistsStatus === 'lost') {
+      queryClient.invalidateQueries({ queryKey: ['youtube_connection'] })
+    }
+  }, [playlistsStatus, queryClient])
+
   return (
     <section aria-labelledby="youtube-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
@@ -89,6 +107,21 @@ export function YouTubePlaylistCard() {
         )}
         {start.isError && <p role="alert" className="text-destructive">Couldn't start connecting. Try again.</p>}
         {data?.status === 'connected' && <p>YouTube connected.</p>}
+        {playlistsQuery.isError && (
+          <p role="alert" className="text-destructive">
+            Couldn't load your playlists. Try again.
+          </p>
+        )}
+        {playlistsQuery.data?.playlists?.length === 0 && (
+          <p className="text-muted-foreground">You have no playlists on YouTube.</p>
+        )}
+        {playlistsQuery.data?.playlists && playlistsQuery.data.playlists.length > 0 && (
+          <ul aria-label="Your playlists" className="grid gap-1">
+            {playlistsQuery.data.playlists.map(({ id, title }) => (
+              <li key={id}>{title}</li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   )

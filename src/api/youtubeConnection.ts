@@ -16,6 +16,19 @@ export async function getYouTubeConnection(): Promise<YouTubeConnection> {
   return body.youtube_connection
 }
 
+// What GET /youtube_connection/playlists answers. `playlists` is null when there is nothing to list.
+export type YouTubePlaylistsResponse = {
+  youtube_connection: { status: YouTubeStatus }
+  playlists: YouTubePlaylist[] | null
+}
+
+// GET /youtube_connection/playlists. Rejects with ApiError on a non-2xx answer.
+export async function getYouTubePlaylists(): Promise<YouTubePlaylistsResponse> {
+  const response = await apiFetch('/youtube_connection/playlists')
+  if (!response.ok) throw await apiErrorFrom(response)
+  return (await response.json()) as YouTubePlaylistsResponse
+}
+
 // POST /youtube_connection/authorization. The API answers with the Google consent address and sets the
 // wn_youtube_oauth cookie, which is why the request must send credentials; the cookie is what lets the callback
 // check that the consent started in this browser. Rejects with ApiError on a non-2xx answer.
