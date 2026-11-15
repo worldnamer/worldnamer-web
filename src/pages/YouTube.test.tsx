@@ -34,6 +34,20 @@ describe('the YouTube page', () => {
     expect(await screen.findByRole('region', { name: 'YouTube page' })).toBeInTheDocument()
   })
 
+  it('shows the transcripts card beside the playlist card', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...youtubeHandlers('not_connected', null, [
+        { youtube_id: 'abcdefghijk', title: 'A recorded video', state: 'done', reason: null },
+      ]),
+    )
+    renderApp('/youtube')
+
+    expect(await screen.findByRole('heading', { name: 'Transcripts' })).toBeInTheDocument()
+    expect(await screen.findByText('A recorded video')).toBeInTheDocument()
+  })
+
   it('shows Not Found and requests nothing when logged out', () => {
     renderApp('/youtube')
 
