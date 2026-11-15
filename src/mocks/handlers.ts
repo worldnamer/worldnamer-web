@@ -402,7 +402,29 @@ export function youtubeConnectionBody(status: MockYouTubeStatus, playlist: MockP
   return { youtube_connection: { status, playlist } }
 }
 
-export function youtubeHandlers(status: MockYouTubeStatus = 'not_connected', playlist: MockPlaylist | null = null) {
+// The recorded videos of the chosen playlist, with the state of each transcript. youtubeVideosHandlers(videos) answers
+// GET /youtube_connection/videos with the given list, as the API does. It is part of youtubeHandlers' third argument.
+export type MockYouTubeVideo = {
+  youtube_id: string
+  title: string
+  state: 'waiting' | 'working' | 'done' | 'no_captions' | 'failed'
+  reason: string | null
+}
+
+export function youtubeVideosHandlers(videos: MockYouTubeVideo[] = []) {
+  const list = http.get(`${API_BASE}/youtube_connection/videos`, ({ request }) => {
+    if (!hasMockToken(request)) return unauthenticated()
+    return HttpResponse.json({ videos }, { headers: noStore })
+  })
+
+  return [list]
+}
+
+export function youtubeHandlers(
+  status: MockYouTubeStatus = 'not_connected',
+  playlist: MockPlaylist | null = null,
+  videos: MockYouTubeVideo[] = [],
+) {
   const connection = http.get(`${API_BASE}/youtube_connection`, ({ request }) => {
     if (!hasMockToken(request)) return unauthenticated()
     return HttpResponse.json(youtubeConnectionBody(status, playlist), { headers: noStore })
@@ -413,7 +435,7 @@ export function youtubeHandlers(status: MockYouTubeStatus = 'not_connected', pla
     return HttpResponse.json({ authorization_url: CONSENT_URL }, { status: 201, headers: noStore })
   })
 
-  return [connection, start]
+  return [connection, start, ...youtubeVideosHandlers(videos)]
 }
 
 // The recipes. recipesHandlers(initial) keeps one in-memory list that its handlers share. Like the API, the list answers
