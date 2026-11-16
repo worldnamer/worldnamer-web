@@ -129,3 +129,57 @@ describe('the transcripts card', () => {
     expect(container.querySelector('b')).toBeNull()
   })
 })
+
+describe('the summary under each video', () => {
+  beforeEach(() => {
+    clearAccessToken()
+    setAccessToken(REFRESH_TOKEN)
+  })
+
+  async function firstItem(videos: MockYouTubeVideo[]) {
+    server.use(...youtubeVideosHandlers(videos))
+    renderCard()
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    return within(list).getAllByRole('listitem')[0]
+  }
+
+  it.each([
+    [{ state: 'waiting' }, 'Summary waiting'],
+    [{ state: 'working' }, 'Summarising'],
+    [{ state: 'done', text: 'A short summary.' }, 'A short summary.'],
+    [{ state: 'nothing_to_summarise' }, 'Nothing to summarise.'],
+    [{ state: 'failed', reason: 'timed_out' }, 'No summary: The summary took too long.'],
+    [{ state: 'failed', reason: 'model_unauthorized' }, 'No summary: The summary service refused the request.'],
+    [{ state: 'failed', reason: 'bad_response' }, 'No summary: The summary service gave an answer we could not read.'],
+    [{ state: 'failed', reason: 'not_a_known_word' }, 'No summary: Something went wrong.'],
+    [{ state: 'failed' }, 'No summary: Something went wrong.'],
+  ])('shows the summary %j', async (summary, line) => {
+    const item = await firstItem([video({ state: 'done', summary })])
+    // getByText throws when the line is missing, so the call is the assertion.
+    within(item).getByText(line)
+  })
+
+  it('shows nothing extra when the summary is null or missing', async () => {
+    const item = await firstItem([video({ title: 'Plain', state: 'done', summary: null })])
+    within(item).getByText('Plain')
+    expect(item.querySelectorAll('p')).toHaveLength(0)
+  })
+
+  it('renders as before when the API does not send the field', async () => {
+    const item = await firstItem([video({ title: 'Old API', state: 'done' })])
+    within(item).getByText('Done')
+    expect(item.querySelectorAll('p')).toHaveLength(0)
+  })
+
+  it('keeps paragraph breaks by styling, not markup', async () => {
+    const item = await firstItem([video({ state: 'done', summary: { state: 'done', text: 'One.\n\nTwo.' } })])
+    expect(item.querySelector('p')).toHaveClass('whitespace-pre-line')
+  })
+
+  it('shows HTML in the summary as literal text and creates no element', async () => {
+    const hostile = '<img src=x onerror=alert(1)>'
+    const item = await firstItem([video({ state: 'done', summary: { state: 'done', text: hostile } })])
+    within(item).getByText(hostile)
+    expect(item.querySelector('img')).toBeNull()
+  })
+})
