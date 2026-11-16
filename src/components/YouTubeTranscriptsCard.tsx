@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getYouTubeVideos, type YouTubeVideoState } from '@/api/youtubeVideos'
+import { getYouTubeVideos, type YouTubeSummary, type YouTubeVideoState } from '@/api/youtubeVideos'
 
 const stateLabels: Record<YouTubeVideoState, string> = {
   waiting: 'Waiting',
@@ -26,6 +26,39 @@ const fallbackReasonSentence = 'Something went wrong.'
 
 function sentenceFor(reason: string | null): string {
   return (reason && reasonSentences[reason]) || fallbackReasonSentence
+}
+
+const summaryReasonSentences: Record<string, string> = {
+  timed_out: 'The summary took too long.',
+  rate_limited: 'The summary service was rate limited.',
+  service_error: 'The summary service had an error.',
+  empty_answer: 'The summary came back empty.',
+  too_long: 'The transcript is too long to summarise.',
+  unauthorized: 'The summary service refused the request.',
+  model_unauthorized: 'The summary service refused the request.',
+  busy: 'The summary service was busy.',
+  unreachable: 'The summary service could not be reached.',
+  bad_response: 'The summary service gave an answer we could not read.',
+  unknown: 'Something went wrong.',
+}
+
+// What to show under a title for a summary. The text is untrusted model output, so it is only ever returned as a string
+// for React to render as a text node.
+function summaryLine(summary: YouTubeSummary): string | null {
+  switch (summary.state) {
+    case 'waiting':
+      return 'Summary waiting'
+    case 'working':
+      return 'Summarising'
+    case 'done':
+      return summary.text ?? null
+    case 'nothing_to_summarise':
+      return 'Nothing to summarise.'
+    case 'failed':
+      return `No summary: ${(summary.reason && summaryReasonSentences[summary.reason]) || fallbackReasonSentence}`
+    default:
+      return null
+  }
 }
 
 // The transcripts card: each recorded video of the chosen playlist with the state of its transcript. Read only.
@@ -57,6 +90,9 @@ export function YouTubeTranscriptsCard() {
                 <span className="shrink-0 text-sm text-muted-foreground">{stateLabels[video.state]}</span>
                 {video.state === 'failed' && (
                   <span className="basis-full text-sm text-muted-foreground">{sentenceFor(video.reason)}</span>
+                )}
+                {video.summary && summaryLine(video.summary) !== null && (
+                  <p className="basis-full whitespace-pre-line break-words text-sm">{summaryLine(video.summary)}</p>
                 )}
               </li>
             ))}

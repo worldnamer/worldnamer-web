@@ -409,6 +409,7 @@ export type MockYouTubeVideo = {
   title: string
   state: 'waiting' | 'working' | 'done' | 'no_captions' | 'failed'
   reason: string | null
+  summary?: { state: string; text?: string; reason?: string } | null
 }
 
 export function youtubeVideosHandlers(videos: MockYouTubeVideo[] = []) {
