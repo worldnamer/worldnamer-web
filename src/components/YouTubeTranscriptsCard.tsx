@@ -78,8 +78,8 @@ export function YouTubeTranscriptsCard({ videoId }: { videoId: string | null }) 
   return (
     <section ref={sectionRef} aria-labelledby="transcripts-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
-        <h2 id="transcripts-heading" className="font-display text-xl tracking-wide">
-          Transcripts
+        <h2 id="transcripts-heading" className="break-words font-display text-xl tracking-wide">
+          {shown ? shown.title : 'Transcripts'}
         </h2>
       </div>
       <div className="grid gap-2 border-b border-border py-2">
@@ -88,7 +88,6 @@ export function YouTubeTranscriptsCard({ videoId }: { videoId: string | null }) 
         {data && !shown && <p className="text-muted-foreground">Select a video to read its summary.</p>}
         {shown && (
           <article className="grid gap-2">
-            <h3 className="break-words font-medium">{shown.title}</h3>
             {detailText(shown) !== null && (
               <p className="whitespace-pre-line break-words text-sm">{detailText(shown)}</p>
             )}

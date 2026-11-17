@@ -41,6 +41,7 @@ describe('the transcripts card', () => {
     renderCard()
 
     await screen.findByRole('heading', { name: 'Alpha' })
+    expect(screen.queryByRole('heading', { name: 'Transcripts' })).toBeNull()
     expect(screen.getByText('A short summary.')).toBeInTheDocument()
     expect(screen.queryByText('Select a video to read its summary.')).toBeNull()
   })

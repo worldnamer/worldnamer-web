@@ -242,7 +242,7 @@ export function YouTubePlaylistCard({
                       role="img"
                       aria-label={dot.label}
                       title={dot.label}
-                      className={`size-2.5 shrink-0 rounded-full ${dotClasses[dot.color]}`}
+                      className={`size-1.5 shrink-0 rounded-full ${dotClasses[dot.color]}`}
                     />
                   )}
                   {dot?.clickable && video_id !== null ? (
