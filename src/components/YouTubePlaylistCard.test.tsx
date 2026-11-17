@@ -720,3 +720,75 @@ describe('YouTubePlaylistCard', () => {
     })
   })
 })
+
+describe('the dots on the playlist rows', () => {
+  const items = [
+    { id: 'i1', video_id: 'aaaaaaaaaaa', title: 'Green one', position: 0 },
+    { id: 'i2', video_id: 'bbbbbbbbbbb', title: 'Red one', position: 1 },
+    { id: 'i3', video_id: null, title: 'Private one', position: 2 },
+  ]
+
+  function useRows(videosHandlers: ReturnType<typeof youtubeHandlers>) {
+    server.use(
+      ...videosHandlers,
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: items.length, items },
+        }),
+      ),
+    )
+  }
+
+  it('shows a dot with an accessible name on each video', async () => {
+    useRows(
+      youtubeHandlers('connected', { id: 'PLb', title: 'Music' }, [
+        { youtube_id: 'aaaaaaaaaaa', title: 'Green one', state: 'done', reason: null, summary: { state: 'done', text: 'T' } },
+        { youtube_id: 'bbbbbbbbbbb', title: 'Red one', state: 'no_captions', reason: null },
+      ]),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    const [green, red, unrecorded] = within(list).getAllByRole('listitem')
+    expect(await within(green).findByRole('img', { name: 'Summary available' })).toBeInTheDocument()
+    expect(within(red).getByRole('img', { name: 'No captions' })).toBeInTheDocument()
+    expect(within(unrecorded).getByRole('img', { name: 'No transcript yet' })).toBeInTheDocument()
+  })
+
+  it('shows no dot and no button when the recorded videos cannot be loaded', async () => {
+    useRows(youtubeHandlers('connected', { id: 'PLb', title: 'Music' }))
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/videos`, () =>
+        HttpResponse.json(errorBody('internal', 'x'), { status: 500 }),
+      ),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    await vi.waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(3))
+    // Give the failed request time to answer before asserting that nothing appeared.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(within(list).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: 'Red one' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the open and remove buttons on every row', async () => {
+    useRows(
+      youtubeHandlers('connected', { id: 'PLb', title: 'Music' }, [
+        { youtube_id: 'bbbbbbbbbbb', title: 'Red one', state: 'failed', reason: 'blocked' },
+      ]),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    await within(list).findByRole('img', { name: 'Transcript failed' })
+    for (const title of ['Green one', 'Red one']) {
+      expect(within(list).getByRole('link', { name: `Open ${title} on YouTube` })).toBeInTheDocument()
+    }
+    for (const title of ['Green one', 'Red one', 'Private one']) {
+      expect(within(list).getByRole('button', { name: `Remove ${title}` })).toBeInTheDocument()
+    }
+  })
+})

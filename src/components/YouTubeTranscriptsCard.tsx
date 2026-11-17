@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { getYouTubeVideos, type YouTubeSummary, type YouTubeVideoState } from '@/api/youtubeVideos'
+import { type YouTubeSummary, type YouTubeVideoState } from '@/api/youtubeVideos'
+import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
 
 const stateLabels: Record<YouTubeVideoState, string> = {
   waiting: 'Waiting',
@@ -63,13 +63,7 @@ function summaryLine(summary: YouTubeSummary): string | null {
 
 // The transcripts card: each recorded video of the chosen playlist with the state of its transcript. Read only.
 export function YouTubeTranscriptsCard() {
-  const { data, isError, isPending } = useQuery({
-    queryKey: ['youtube_videos'],
-    queryFn: getYouTubeVideos,
-    retry: false, // a down API should show the error at once, not after several retries
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-  })
+  const { data, isError, isPending } = useYouTubeVideos()
 
   return (
     <section aria-labelledby="transcripts-heading" className="w-full">

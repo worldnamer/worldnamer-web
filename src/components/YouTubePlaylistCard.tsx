@@ -17,6 +17,8 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
+import { dotForPlaylistVideo, type DotColor } from '@/lib/youtubeDot'
 
 // The API sends the browser back to the site with ?youtube=connected, cancelled or failed after Google's consent
 // screen. Only the two that need a message are kept; "connected" needs none, because the status query says so, and
@@ -31,6 +33,13 @@ type Outcome = keyof typeof outcomeMessages
 function outcomeFrom(search: string): Outcome | null {
   const value = new URLSearchParams(search).get(OUTCOME_PARAM)
   return value === 'cancelled' || value === 'failed' ? value : null
+}
+
+const dotClasses: Record<DotColor, string> = {
+  gray: 'bg-gray-400',
+  yellow: 'bg-yellow-400',
+  red: 'bg-red-400',
+  green: 'bg-green-400',
 }
 
 // The YouTube card: the state of the YouTube link and, once it is connected, the chosen playlist.
@@ -84,6 +93,9 @@ export function YouTubePlaylistCard() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   })
+
+  // The recorded videos give each row its dot. They are only asked for once there is a list to put dots on.
+  const recordedQuery = useYouTubeVideos({ enabled: !!itemsQuery.data?.videos })
 
   const queryClient = useQueryClient()
   const playlistsStatus = playlistsQuery.data?.youtube_connection.status
@@ -198,11 +210,22 @@ export function YouTubePlaylistCard() {
           <ul aria-label="Videos" className="grid gap-1">
             {itemsQuery.data.videos.items.map((video) => {
               const { id, video_id, title } = video
+              const dot = dotForPlaylistVideo(recordedQuery.data, video_id)
               return (
               <li key={id} className="flex items-center justify-between gap-3">
-                {/* The title is plain text, so it can later open the video's summary. The way to the video itself is the
-                    link button beside Remove, which opens YouTube in a new tab. */}
-                <span className="min-w-0 break-words">{title}</span>
+                {/* The dot has a text name so the state is not only a colour. The way to the video itself is the link
+                    button beside Remove, which opens YouTube in a new tab. */}
+                <span className="flex min-w-0 items-center gap-2">
+                  {dot && (
+                    <span
+                      role="img"
+                      aria-label={dot.label}
+                      title={dot.label}
+                      className={`size-2.5 shrink-0 rounded-full ${dotClasses[dot.color]}`}
+                    />
+                  )}
+                  <span className="min-w-0 break-words">{title}</span>
+                </span>
                 <span className="flex shrink-0 items-center">
                   {video_id !== null && (
                     <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" asChild>
