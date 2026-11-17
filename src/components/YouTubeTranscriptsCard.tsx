@@ -1,13 +1,7 @@
-import { type YouTubeSummary, type YouTubeVideoState } from '@/api/youtubeVideos'
+import { useEffect, useRef } from 'react'
+import type { YouTubeTranscriptVideo } from '@/api/youtubeVideos'
 import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
-
-const stateLabels: Record<YouTubeVideoState, string> = {
-  waiting: 'Waiting',
-  working: 'Working',
-  done: 'Done',
-  no_captions: 'No captions',
-  failed: 'Failed',
-}
+import { youtubeDot } from '@/lib/youtubeDot'
 
 const reasonSentences: Record<string, string> = {
   blocked: 'YouTube blocked the request.',
@@ -42,31 +36,47 @@ const summaryReasonSentences: Record<string, string> = {
   unknown: 'Something went wrong.',
 }
 
-// What to show under a title for a summary. The text is untrusted model output, so it is only ever returned as a string
-// for React to render as a text node.
-function summaryLine(summary: YouTubeSummary): string | null {
-  switch (summary.state) {
-    case 'waiting':
-      return 'Summary waiting'
-    case 'working':
-      return 'Summarising'
-    case 'done':
-      return summary.text ?? null
-    case 'nothing_to_summarise':
-      return 'Nothing to summarise.'
+// What a final video has to say: its summary, or in plain words why there is none. Only text is returned, never markup,
+// because the summary is untrusted model output and React renders it as a text node. Null when there is nothing to say.
+function detailText(video: YouTubeTranscriptVideo): string | null {
+  switch (video.state) {
+    case 'no_captions':
+      return 'No captions.'
     case 'failed':
-      return `No summary: ${(summary.reason && summaryReasonSentences[summary.reason]) || fallbackReasonSentence}`
+      return sentenceFor(video.reason)
+    case 'done':
+      switch (video.summary?.state) {
+        case 'done':
+          return video.summary.text ?? null
+        case 'nothing_to_summarise':
+          return 'Nothing to summarise.'
+        case 'failed':
+          return `No summary: ${(video.summary.reason && summaryReasonSentences[video.summary.reason]) || fallbackReasonSentence}`
+        default:
+          return null
+      }
     default:
       return null
   }
 }
 
-// The transcripts card: each recorded video of the chosen playlist with the state of its transcript. Read only.
-export function YouTubeTranscriptsCard() {
+// The transcripts card: the summary of the video selected in the playlist card, or why it has none. Read only.
+export function YouTubeTranscriptsCard({ videoId }: { videoId: string | null }) {
   const { data, isError, isPending } = useYouTubeVideos()
+  const sectionRef = useRef<HTMLElement>(null)
+
+  // Only a final video is shown; the playlist card does not let anything else be selected.
+  const video = videoId === null ? undefined : data?.find((recorded) => recorded.youtube_id === videoId)
+  const shown = video && youtubeDot(video).clickable ? video : undefined
+
+  // On a narrow screen the card sits below the list, so a new selection brings it into view. jsdom has no
+  // scrollIntoView, hence the guard.
+  useEffect(() => {
+    if (videoId !== null) sectionRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [videoId])
 
   return (
-    <section aria-labelledby="transcripts-heading" className="w-full">
+    <section ref={sectionRef} aria-labelledby="transcripts-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
         <h2 id="transcripts-heading" className="font-display text-xl tracking-wide">
           Transcripts
@@ -75,22 +85,14 @@ export function YouTubeTranscriptsCard() {
       <div className="grid gap-2 border-b border-border py-2">
         {isPending && <p className="text-muted-foreground">Loading transcripts...</p>}
         {isError && !data && <p role="alert" className="text-destructive">Couldn't load the transcripts. Try reloading the page.</p>}
-        {data && data.length === 0 && <p className="text-muted-foreground">No videos recorded yet.</p>}
-        {data && data.length > 0 && (
-          <ul aria-label="Videos" className="grid gap-1">
-            {data.map((video) => (
-              <li key={video.youtube_id} className="flex flex-wrap items-center justify-between gap-3">
-                <span className="min-w-0 break-words">{video.title}</span>
-                <span className="shrink-0 text-sm text-muted-foreground">{stateLabels[video.state]}</span>
-                {video.state === 'failed' && (
-                  <span className="basis-full text-sm text-muted-foreground">{sentenceFor(video.reason)}</span>
-                )}
-                {video.summary && summaryLine(video.summary) !== null && (
-                  <p className="basis-full whitespace-pre-line break-words text-sm">{summaryLine(video.summary)}</p>
-                )}
-              </li>
-            ))}
-          </ul>
+        {data && !shown && <p className="text-muted-foreground">Select a video to read its summary.</p>}
+        {shown && (
+          <article className="grid gap-2">
+            <h3 className="break-words font-medium">{shown.title}</h3>
+            {detailText(shown) !== null && (
+              <p className="whitespace-pre-line break-words text-sm">{detailText(shown)}</p>
+            )}
+          </article>
         )}
       </div>
     </section>

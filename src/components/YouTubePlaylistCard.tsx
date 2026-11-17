@@ -17,6 +17,7 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { cn } from '@/lib/utils'
 import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
 import { dotForPlaylistVideo, type DotColor } from '@/lib/youtubeDot'
 
@@ -43,7 +44,15 @@ const dotClasses: Record<DotColor, string> = {
 }
 
 // The YouTube card: the state of the YouTube link and, once it is connected, the chosen playlist.
-export function YouTubePlaylistCard() {
+// `selectedVideoId` is the video whose summary the page is showing, and `onSelect` asks the page to show another one or,
+// with null, none. The page owns the selection so the transcripts card can read it.
+export function YouTubePlaylistCard({
+  selectedVideoId,
+  onSelect,
+}: {
+  selectedVideoId: string | null
+  onSelect: (videoId: string | null) => void
+}) {
   const start = useMutation({
     mutationFn: startYouTubeAuthorization,
     onSuccess: (url) => navigateTo(url),
@@ -96,6 +105,17 @@ export function YouTubePlaylistCard() {
 
   // The recorded videos give each row its dot. They are only asked for once there is a list to put dots on.
   const recordedQuery = useYouTubeVideos({ enabled: !!itemsQuery.data?.videos })
+
+  // A selection only stands while its row is still in the list and still final. A removed video, a lost connection or a
+  // video that is being redone clears it, so the transcripts card never shows a video the list does not offer.
+  const selectionStands =
+    selectedVideoId !== null &&
+    !!itemsQuery.data?.videos?.items.some(
+      (item) => item.video_id === selectedVideoId && dotForPlaylistVideo(recordedQuery.data, item.video_id)?.clickable,
+    )
+  useEffect(() => {
+    if (selectedVideoId !== null && !selectionStands) onSelect(null)
+  }, [selectedVideoId, selectionStands, onSelect])
 
   const queryClient = useQueryClient()
   const playlistsStatus = playlistsQuery.data?.youtube_connection.status
@@ -211,8 +231,9 @@ export function YouTubePlaylistCard() {
             {itemsQuery.data.videos.items.map((video) => {
               const { id, video_id, title } = video
               const dot = dotForPlaylistVideo(recordedQuery.data, video_id)
+              const selected = video_id !== null && video_id === selectedVideoId
               return (
-              <li key={id} className="flex items-center justify-between gap-3">
+              <li key={id} className={cn('flex items-center justify-between gap-3 rounded-md px-2 py-1', selected && 'bg-accent')}>
                 {/* The dot has a text name so the state is not only a colour. The way to the video itself is the link
                     button beside Remove, which opens YouTube in a new tab. */}
                 <span className="flex min-w-0 items-center gap-2">
@@ -224,7 +245,18 @@ export function YouTubePlaylistCard() {
                       className={`size-2.5 shrink-0 rounded-full ${dotClasses[dot.color]}`}
                     />
                   )}
-                  <span className="min-w-0 break-words">{title}</span>
+                  {dot?.clickable && video_id !== null ? (
+                    <button
+                      type="button"
+                      aria-current={selected ? 'true' : undefined}
+                      className="min-w-0 cursor-pointer break-words rounded-sm text-left hover:text-brand focus-visible:outline-2 focus-visible:outline-ring"
+                      onClick={() => onSelect(video_id)}
+                    >
+                      {title}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 break-words">{title}</span>
+                  )}
                 </span>
                 <span className="flex shrink-0 items-center">
                   {video_id !== null && (
