@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccessToken, setAccessToken } from '@/auth/tokenStore'
@@ -7,16 +7,18 @@ import { API_BASE, REFRESH_TOKEN, youtubeVideosHandlers, type MockYouTubeVideo }
 import { server } from '@/mocks/server'
 import { YouTubeTranscriptsCard } from '@/components/YouTubeTranscriptsCard'
 
-function renderCard() {
+const ID = 'abcdefghijk'
+
+function renderCard(videoId: string | null = ID) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <YouTubeTranscriptsCard />
+      <YouTubeTranscriptsCard videoId={videoId} />
     </QueryClientProvider>,
   )
 }
 
 function video(overrides: Partial<MockYouTubeVideo>): MockYouTubeVideo {
-  return { youtube_id: 'abcdefghijk', title: 'A video', state: 'waiting', reason: null, ...overrides }
+  return { youtube_id: ID, title: 'A video', state: 'done', reason: null, ...overrides }
 }
 
 describe('the transcripts card', () => {
@@ -25,33 +27,42 @@ describe('the transcripts card', () => {
     setAccessToken(REFRESH_TOKEN)
   })
 
-  it("shows each video's title with the state of its transcript", async () => {
-    server.use(
-      ...youtubeVideosHandlers([
-        video({ youtube_id: 'aaaaaaaaaaa', title: 'Alpha', state: 'waiting' }),
-        video({ youtube_id: 'bbbbbbbbbbb', title: 'Bravo', state: 'working' }),
-        video({ youtube_id: 'ccccccccccc', title: 'Charlie', state: 'done' }),
-        video({ youtube_id: 'ddddddddddd', title: 'Delta', state: 'no_captions' }),
-        video({ youtube_id: 'eeeeeeeeeee', title: 'Echo', state: 'failed', reason: 'blocked' }),
-      ]),
-    )
+  it('asks the user to select a video before one is selected', async () => {
+    server.use(...youtubeVideosHandlers([video({ summary: { state: 'done', text: 'Hidden.' } })]))
+    renderCard(null)
+
+    await screen.findByText('Select a video to read its summary.')
+    expect(screen.getByRole('heading', { name: 'Transcripts' })).toBeInTheDocument()
+    expect(screen.queryByText('Hidden.')).toBeNull()
+  })
+
+  it('shows the summary text of a selected green video', async () => {
+    server.use(...youtubeVideosHandlers([video({ title: 'Alpha', summary: { state: 'done', text: 'A short summary.' } })]))
     renderCard()
 
-    const list = await screen.findByRole('list', { name: 'Videos' })
-    const items = within(list).getAllByRole('listitem')
-    const expected = [
-      ['Alpha', 'Waiting'],
-      ['Bravo', 'Working'],
-      ['Charlie', 'Done'],
-      ['Delta', 'No captions'],
-      ['Echo', 'Failed'],
-    ]
-    expect(items).toHaveLength(expected.length)
-    expected.forEach(([title, label], index) => {
-      // getByText throws when the text is missing, so each call is an assertion.
-      within(items[index]).getByText(title)
-      within(items[index]).getByText(label)
-    })
+    await screen.findByRole('heading', { name: 'Alpha' })
+    expect(screen.queryByRole('heading', { name: 'Transcripts' })).toBeNull()
+    expect(screen.getByText('A short summary.')).toBeInTheDocument()
+    expect(screen.queryByText('Select a video to read its summary.')).toBeNull()
+  })
+
+  it('shows Nothing to summarise. for a selected video with nothing to summarise', async () => {
+    server.use(...youtubeVideosHandlers([video({ summary: { state: 'nothing_to_summarise' } })]))
+    renderCard()
+
+    await screen.findByText('Nothing to summarise.')
+  })
+
+  it.each([
+    ['timed_out', 'No summary: The summary took too long.'],
+    ['model_unauthorized', 'No summary: The summary service refused the request.'],
+    ['bad_response', 'No summary: The summary service gave an answer we could not read.'],
+    ['not_a_known_word', 'No summary: Something went wrong.'],
+  ])('shows the reason for a selected failed summary', async (reason, line) => {
+    server.use(...youtubeVideosHandlers([video({ summary: { state: 'failed', reason } })]))
+    renderCard()
+
+    await screen.findByText(line)
   })
 
   it.each([
@@ -65,51 +76,52 @@ describe('the transcripts card', () => {
     ['unreachable', 'The transcript service could not be reached.'],
     ['bad_response', 'The transcript service sent an unexpected answer.'],
     ['unknown', 'Something went wrong.'],
-  ])('says in plain words why a transcript failed', async (reason, sentence) => {
+  ])('shows the reason for a selected failed transcript', async (reason, sentence) => {
     server.use(
-      ...youtubeVideosHandlers([
-        video({ title: 'Failed video', state: 'failed', reason: reason as MockYouTubeVideo['reason'] }),
-      ]),
+      ...youtubeVideosHandlers([video({ state: 'failed', reason: reason as MockYouTubeVideo['reason'] })]),
     )
     renderCard()
 
-    const list = await screen.findByRole('list', { name: 'Videos' })
-    const [item] = within(list).getAllByRole('listitem')
-    // getByText throws when the sentence is missing, so the call is the assertion.
-    within(item).getByText(sentence)
+    await screen.findByText(sentence)
   })
 
-  it('falls back to a generic line for a reason it does not know', async () => {
+  it('shows No captions. for a selected video without captions', async () => {
+    server.use(...youtubeVideosHandlers([video({ state: 'no_captions' })]))
+    renderCard()
+
+    await screen.findByText('No captions.')
+  })
+
+  it('falls back to Something went wrong. for an unknown reason', async () => {
     server.use(
-      ...youtubeVideosHandlers([
-        video({
-          youtube_id: 'aaaaaaaaaaa',
-          title: 'Alpha',
-          state: 'failed',
-          reason: 'something_new' as MockYouTubeVideo['reason'],
-        }),
-        video({ youtube_id: 'bbbbbbbbbbb', title: 'Bravo', state: 'done', reason: null }),
-      ]),
+      ...youtubeVideosHandlers([video({ state: 'failed', reason: 'something_new' as MockYouTubeVideo['reason'] })]),
     )
     renderCard()
 
-    const list = await screen.findByRole('list', { name: 'Videos' })
-    const [failed, done] = within(list).getAllByRole('listitem')
-    // getByText throws when the sentence is missing, so the call is the assertion.
-    within(failed).getByText('Something went wrong.')
-    expect(within(done).queryByText('Something went wrong.')).toBeNull()
-    expect(screen.getAllByText('Something went wrong.')).toHaveLength(1)
+    await screen.findByText('Something went wrong.')
   })
 
-  it('says there are no videos yet when none are recorded', async () => {
-    server.use(...youtubeVideosHandlers([]))
+  it("shows a summary's HTML as literal text and creates no element", async () => {
+    const hostile = '<img src=x onerror=alert(1)>'
+    server.use(...youtubeVideosHandlers([video({ title: '<b>bold</b>', summary: { state: 'done', text: hostile } })]))
+    const { container } = renderCard()
+
+    await screen.findByText(hostile)
+    expect(screen.getByRole('heading', { name: '<b>bold</b>' })).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('b')).toBeNull()
+  })
+
+  it('keeps paragraph breaks by styling, not markup', async () => {
+    server.use(...youtubeVideosHandlers([video({ summary: { state: 'done', text: 'One.\n\nTwo.' } })]))
     renderCard()
 
-    await screen.findByText('No videos recorded yet.')
-    expect(screen.queryByRole('list', { name: 'Videos' })).toBeNull()
+    const text = await screen.findByText(/One\./)
+    expect(text).toHaveClass('whitespace-pre-line')
+    expect(text.querySelector('br')).toBeNull()
   })
 
-  it('shows an alert when the videos cannot be loaded', async () => {
+  it('still shows the loading and error lines', async () => {
     server.use(
       http.get(`${API_BASE}/youtube_connection/videos`, () =>
         HttpResponse.json({ error: { code: 'server_error', message: 'Broken.' } }, { status: 500 }),
@@ -117,69 +129,8 @@ describe('the transcripts card', () => {
     )
     renderCard()
 
+    expect(screen.getByText('Loading transcripts...')).toBeInTheDocument()
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toBe("Couldn't load the transcripts. Try reloading the page.")
-  })
-
-  it('shows a title as plain text, never as markup', async () => {
-    server.use(...youtubeVideosHandlers([video({ title: '<b>bold</b>' })]))
-    const { container } = renderCard()
-
-    await screen.findByText('<b>bold</b>')
-    expect(container.querySelector('b')).toBeNull()
-  })
-})
-
-describe('the summary under each video', () => {
-  beforeEach(() => {
-    clearAccessToken()
-    setAccessToken(REFRESH_TOKEN)
-  })
-
-  async function firstItem(videos: MockYouTubeVideo[]) {
-    server.use(...youtubeVideosHandlers(videos))
-    renderCard()
-    const list = await screen.findByRole('list', { name: 'Videos' })
-    return within(list).getAllByRole('listitem')[0]
-  }
-
-  it.each([
-    [{ state: 'waiting' }, 'Summary waiting'],
-    [{ state: 'working' }, 'Summarising'],
-    [{ state: 'done', text: 'A short summary.' }, 'A short summary.'],
-    [{ state: 'nothing_to_summarise' }, 'Nothing to summarise.'],
-    [{ state: 'failed', reason: 'timed_out' }, 'No summary: The summary took too long.'],
-    [{ state: 'failed', reason: 'model_unauthorized' }, 'No summary: The summary service refused the request.'],
-    [{ state: 'failed', reason: 'bad_response' }, 'No summary: The summary service gave an answer we could not read.'],
-    [{ state: 'failed', reason: 'not_a_known_word' }, 'No summary: Something went wrong.'],
-    [{ state: 'failed' }, 'No summary: Something went wrong.'],
-  ])('shows the summary %j', async (summary, line) => {
-    const item = await firstItem([video({ state: 'done', summary })])
-    // getByText throws when the line is missing, so the call is the assertion.
-    within(item).getByText(line)
-  })
-
-  it('shows nothing extra when the summary is null or missing', async () => {
-    const item = await firstItem([video({ title: 'Plain', state: 'done', summary: null })])
-    within(item).getByText('Plain')
-    expect(item.querySelectorAll('p')).toHaveLength(0)
-  })
-
-  it('renders as before when the API does not send the field', async () => {
-    const item = await firstItem([video({ title: 'Old API', state: 'done' })])
-    within(item).getByText('Done')
-    expect(item.querySelectorAll('p')).toHaveLength(0)
-  })
-
-  it('keeps paragraph breaks by styling, not markup', async () => {
-    const item = await firstItem([video({ state: 'done', summary: { state: 'done', text: 'One.\n\nTwo.' } })])
-    expect(item.querySelector('p')).toHaveClass('whitespace-pre-line')
-  })
-
-  it('shows HTML in the summary as literal text and creates no element', async () => {
-    const hostile = '<img src=x onerror=alert(1)>'
-    const item = await firstItem([video({ state: 'done', summary: { state: 'done', text: hostile } })])
-    within(item).getByText(hostile)
-    expect(item.querySelector('img')).toBeNull()
   })
 })

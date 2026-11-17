@@ -15,6 +15,7 @@ import {
   youtubeHandlers,
 } from '@/mocks/handlers'
 import { server } from '@/mocks/server'
+import { useState } from 'react'
 import { YouTubePlaylistCard } from './YouTubePlaylistCard'
 
 vi.mock('@/lib/externalNavigation', () => ({ navigateTo: vi.fn() }))
@@ -36,7 +37,7 @@ function renderCard(address = '/') {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[address]}>
-        <YouTubePlaylistCard />
+        <YouTubePlaylistCard selectedVideoId={null} onSelect={() => {}} />
         <Address />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -718,5 +719,181 @@ describe('YouTubePlaylistCard', () => {
       expect(deletes).toHaveLength(1)
       expect(connectionCalls).toBeGreaterThanOrEqual(2)
     })
+  })
+})
+
+describe('the dots on the playlist rows', () => {
+  const items = [
+    { id: 'i1', video_id: 'aaaaaaaaaaa', title: 'Green one', position: 0 },
+    { id: 'i2', video_id: 'bbbbbbbbbbb', title: 'Red one', position: 1 },
+    { id: 'i3', video_id: null, title: 'Private one', position: 2 },
+  ]
+
+  function useRows(videosHandlers: ReturnType<typeof youtubeHandlers>) {
+    server.use(
+      ...videosHandlers,
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: items.length, items },
+        }),
+      ),
+    )
+  }
+
+  it('shows a dot with an accessible name on each video', async () => {
+    useRows(
+      youtubeHandlers('connected', { id: 'PLb', title: 'Music' }, [
+        { youtube_id: 'aaaaaaaaaaa', title: 'Green one', state: 'done', reason: null, summary: { state: 'done', text: 'T' } },
+        { youtube_id: 'bbbbbbbbbbb', title: 'Red one', state: 'no_captions', reason: null },
+      ]),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    const [green, red, unrecorded] = within(list).getAllByRole('listitem')
+    expect(await within(green).findByRole('img', { name: 'Summary available' })).toBeInTheDocument()
+    expect(within(red).getByRole('img', { name: 'No captions' })).toBeInTheDocument()
+    expect(within(unrecorded).getByRole('img', { name: 'No transcript yet' })).toBeInTheDocument()
+  })
+
+  it('shows no dot and no button when the recorded videos cannot be loaded', async () => {
+    useRows(youtubeHandlers('connected', { id: 'PLb', title: 'Music' }))
+    server.use(
+      http.get(`${API_BASE}/youtube_connection/videos`, () =>
+        HttpResponse.json(errorBody('internal', 'x'), { status: 500 }),
+      ),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    await vi.waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(3))
+    // Give the failed request time to answer before asserting that nothing appeared.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(within(list).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: 'Red one' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the open and remove buttons on every row', async () => {
+    useRows(
+      youtubeHandlers('connected', { id: 'PLb', title: 'Music' }, [
+        { youtube_id: 'bbbbbbbbbbb', title: 'Red one', state: 'failed', reason: 'blocked' },
+      ]),
+    )
+    renderCard()
+
+    const list = await screen.findByRole('list', { name: 'Videos' })
+    await within(list).findByRole('img', { name: 'Transcript failed' })
+    for (const title of ['Green one', 'Red one']) {
+      expect(within(list).getByRole('link', { name: `Open ${title} on YouTube` })).toBeInTheDocument()
+    }
+    for (const title of ['Green one', 'Red one', 'Private one']) {
+      expect(within(list).getByRole('button', { name: `Remove ${title}` })).toBeInTheDocument()
+    }
+  })
+})
+
+describe('selecting a video from the playlist', () => {
+  const items = [
+    { id: 'i1', video_id: 'aaaaaaaaaaa', title: 'Green one', position: 0 },
+    { id: 'i2', video_id: 'bbbbbbbbbbb', title: 'Red one', position: 1 },
+    { id: 'i3', video_id: 'ccccccccccc', title: 'Gray one', position: 2 },
+    { id: 'i4', video_id: 'ddddddddddd', title: 'Yellow one', position: 3 },
+  ]
+  const recorded = [
+    { youtube_id: 'aaaaaaaaaaa', title: 'Green one', state: 'done' as const, reason: null, summary: { state: 'done' as const, text: 'T' } },
+    { youtube_id: 'bbbbbbbbbbb', title: 'Red one', state: 'no_captions' as const, reason: null },
+    { youtube_id: 'ccccccccccc', title: 'Gray one', state: 'waiting' as const, reason: null },
+    { youtube_id: 'ddddddddddd', title: 'Yellow one', state: 'done' as const, reason: null, summary: { state: 'working' as const } },
+  ]
+
+  // Holds the selection as the page does and shows it, so a test can see what the card was told.
+  function Harness() {
+    const [selected, setSelected] = useState<string | null>(null)
+    return (
+      <>
+        <YouTubePlaylistCard selectedVideoId={selected} onSelect={setSelected} />
+        <output aria-label="Selected">{selected ?? 'none'}</output>
+      </>
+    )
+  }
+
+  async function renderList() {
+    server.use(
+      ...youtubeHandlers('connected', { id: 'PLb', title: 'Music' }, recorded),
+      http.get(`${API_BASE}/youtube_connection/playlist/items`, () =>
+        HttpResponse.json({
+          youtube_connection: { status: 'connected' },
+          playlist: { id: 'PLb', title: 'Music', available: true },
+          videos: { total_count: items.length, items },
+        }),
+      ),
+    )
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <Harness />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // The green row's title becomes a button once the recorded videos have answered.
+    await screen.findByRole('button', { name: 'Green one' })
+  }
+
+  it("does nothing when a gray or yellow row's title is clicked", async () => {
+    const user = userEvent.setup()
+    await renderList()
+
+    expect(screen.queryByRole('button', { name: 'Gray one' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Yellow one' })).not.toBeInTheDocument()
+    await user.click(screen.getByText('Gray one'))
+    await user.click(screen.getByText('Yellow one'))
+    expect(screen.getByLabelText('Selected')).toHaveTextContent('none')
+  })
+
+  it('selects a green row on click and marks it current', async () => {
+    const user = userEvent.setup()
+    await renderList()
+
+    await user.click(screen.getByRole('button', { name: 'Green one' }))
+
+    expect(screen.getByLabelText('Selected')).toHaveTextContent('aaaaaaaaaaa')
+    expect(screen.getByRole('button', { name: 'Green one' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Red one' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('selects a red row on click', async () => {
+    const user = userEvent.setup()
+    await renderList()
+
+    await user.click(screen.getByRole('button', { name: 'Red one' }))
+
+    expect(screen.getByLabelText('Selected')).toHaveTextContent('bbbbbbbbbbb')
+  })
+
+  it('moves the highlight when another row is clicked', async () => {
+    const user = userEvent.setup()
+    await renderList()
+
+    await user.click(screen.getByRole('button', { name: 'Green one' }))
+    await user.click(screen.getByRole('button', { name: 'Red one' }))
+
+    expect(screen.getByRole('button', { name: 'Red one' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Green one' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('clears the selection when the selected video is removed', async () => {
+    const user = userEvent.setup()
+    server.use(http.delete(`${API_BASE}/youtube_connection/playlist/items/:id`, () => new HttpResponse(null, { status: 204 })))
+    await renderList()
+
+    await user.click(screen.getByRole('button', { name: 'Green one' }))
+    expect(screen.getByLabelText('Selected')).toHaveTextContent('aaaaaaaaaaa')
+    await user.click(screen.getByRole('button', { name: 'Remove Green one' }))
+    await user.click(await screen.findByRole('button', { name: 'Remove' }))
+
+    await vi.waitFor(() => expect(screen.getByLabelText('Selected')).toHaveTextContent('none'))
+    expect(screen.queryByText('Green one')).not.toBeInTheDocument()
   })
 })
