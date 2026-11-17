@@ -107,7 +107,7 @@ export function RecipeRolodex() {
                   aria-current={selected ? 'page' : undefined}
                   className={cn(
                     'block min-w-0 flex-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:text-foreground',
-                    selected ? 'bg-panel text-foreground' : 'text-muted-foreground',
+                    selected ? 'bg-accent text-foreground' : 'text-muted-foreground',
                   )}
                 >
                   {recipe.title}

@@ -16,6 +16,7 @@ import {
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
+import { revealOnHover } from '@/lib/revealOnHover'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
 import { cn } from '@/lib/utils'
 import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
@@ -233,7 +234,15 @@ export function YouTubePlaylistCard({
               const dot = dotForPlaylistVideo(recordedQuery.data, video_id)
               const selected = video_id !== null && video_id === selectedVideoId
               return (
-              <li key={id} className={cn('flex items-center justify-between gap-3 rounded-md px-2 py-1', selected && 'bg-accent')}>
+              // `group` lets the icons reveal themselves while the row is hovered or holds focus; `relative` lets a clickable
+              // title stretch its hit area over the whole row.
+              <li
+                key={id}
+                className={cn(
+                  'group relative flex items-center justify-between gap-3 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:text-foreground',
+                  selected && 'bg-accent text-foreground',
+                )}
+              >
                 {/* The dot has a text name so the state is not only a colour. The way to the video itself is the link
                     button beside Remove, which opens YouTube in a new tab. */}
                 <span className="flex min-w-0 items-center gap-2">
@@ -249,7 +258,7 @@ export function YouTubePlaylistCard({
                     <button
                       type="button"
                       aria-current={selected ? 'true' : undefined}
-                      className="min-w-0 cursor-pointer break-words rounded-sm text-left hover:text-brand focus-visible:outline-2 focus-visible:outline-ring"
+                      className="min-w-0 cursor-pointer break-words rounded-sm text-left after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-ring"
                       onClick={() => onSelect(video_id)}
                     >
                       {title}
@@ -258,9 +267,9 @@ export function YouTubePlaylistCard({
                     <span className="min-w-0 break-words">{title}</span>
                   )}
                 </span>
-                <span className="flex shrink-0 items-center">
+                <span className="relative flex shrink-0 items-center">
                   {video_id !== null && (
-                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" asChild>
+                    <Button variant="ghost" size="icon-sm" className={cn('text-muted-foreground hover:text-foreground', revealOnHover)} asChild>
                       <a
                         href={`https://www.youtube.com/watch?v=${encodeURIComponent(video_id)}`}
                         target="_blank"
@@ -274,7 +283,7 @@ export function YouTubePlaylistCard({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  className={cn('shrink-0 text-muted-foreground hover:text-foreground', revealOnHover)}
                   aria-label={`Remove ${title}`}
                   onClick={(event) => del.ask(video, event.currentTarget)}
                 >
