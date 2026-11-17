@@ -16,7 +16,7 @@ export function SectionTabs() {
           className={({ isActive }) =>
             cn(
               'rounded-md px-3 py-2 transition-colors hover:text-foreground',
-              isActive ? 'bg-panel text-foreground' : 'text-muted-foreground',
+              isActive ? 'bg-accent text-foreground' : 'text-muted-foreground',
             )
           }
         >
