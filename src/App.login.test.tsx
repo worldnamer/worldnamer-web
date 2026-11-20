@@ -308,10 +308,11 @@ describe('successful login', () => {
     const menu = await screen.findByRole('menu')
     const name = within(menu).getByText(VALID_USERNAME)
     expect(name.closest('a, button, [role="menuitem"]')).toBeNull()
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(sections.length + 1)
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(sections.length + 2)
     for (const section of sections) {
       expect(within(menu).getByRole('menuitem', { name: section.label })).toHaveAttribute('href', section.to)
     }
+    expect(within(menu).getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings')
     expect(within(menu).getByRole('menuitem', { name: 'Log out' })).toBeInTheDocument()
   })
 })

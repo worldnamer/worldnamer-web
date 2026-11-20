@@ -5,6 +5,7 @@ import { NotFound } from './pages/NotFound'
 import { Privacy } from './pages/Privacy'
 import { Recipes } from './pages/Recipes'
 import { Resume } from './pages/Resume'
+import { Settings } from './pages/Settings'
 import { YouTube } from './pages/YouTube'
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="/recipes" element={<Recipes />} />
         <Route path="/recipes/:id" element={<Recipes />} />
         <Route path="/youtube" element={<YouTube />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>
