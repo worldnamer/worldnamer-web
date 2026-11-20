@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -34,6 +34,7 @@ describe('the Settings page', () => {
     renderApp('/settings')
 
     expect(await screen.findByRole('region', { name: 'Settings page' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Quotes' })).toBeInTheDocument()
   })
 
   it('shows the not-found page when logged out', async () => {
@@ -111,6 +112,30 @@ describe('the Settings page', () => {
     expect(text).toHaveValue(tooLong)
   })
 
+  it('lists the quotes oldest first under a Manage button', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...quotesHandlers([
+        { id: 1, text: 'First one', author: 'Ann' },
+        { id: 2, text: 'Second one' },
+      ]),
+    )
+    renderApp('/settings')
+
+    const manage = await screen.findByRole('button', { name: 'Manage' })
+    expect(manage).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+
+    fireEvent.click(manage)
+
+    expect(manage).toHaveAttribute('aria-expanded', 'true')
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent('First one')
+    expect(items[1]).toHaveTextContent('Second one')
+  })
+
   it('replaces the empty state with the quote after the first one is added', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...quotesHandlers())
@@ -122,5 +147,65 @@ describe('the Settings page', () => {
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('First one')
     expect(screen.queryByText('Add your first quote')).not.toBeInTheDocument()
+  })
+
+  it('asks to confirm before deleting a quote and keeps it when cancelled', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...quotesHandlers([{ id: 1, text: 'First one', author: 'Ann' }]))
+    renderApp('/settings')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
+    const deleteButton = screen.getByRole('button', { name: 'Delete quote: First one' })
+    fireEvent.click(deleteButton)
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('listitem')).toHaveTextContent('First one')
+    expect(deleteButton).toHaveFocus()
+  })
+
+  it('removes a quote from the list once the deletion is confirmed', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...quotesHandlers([
+        { id: 1, text: 'First one', author: 'Ann' },
+        { id: 2, text: 'Second one' },
+      ]),
+    )
+    renderApp('/settings')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete quote: First one' }))
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.queryByText('First one')).not.toBeInTheDocument())
+    expect(screen.getByRole('listitem')).toHaveTextContent('Second one')
+  })
+
+  it("shows the next quote as today's after the current one is deleted", async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...quotesHandlers([
+        { id: 1, text: 'First one', author: 'Ann' },
+        { id: 2, text: 'Second one' },
+      ]),
+    )
+    renderApp('/settings')
+
+    expect(await screen.findByRole('blockquote')).toHaveTextContent('First one')
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete quote: First one' }))
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.getByRole('blockquote')).toHaveTextContent('Second one'))
+    expect(screen.getByRole('blockquote')).not.toHaveTextContent('First one')
   })
 })
