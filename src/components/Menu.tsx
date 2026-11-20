@@ -30,6 +30,9 @@ export function Menu({ username }: { username: string }) {
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{username}</DropdownMenuLabel>
+        <DropdownMenuItem asChild>
+          <Link to="/settings">Settings</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void logout()}>Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
