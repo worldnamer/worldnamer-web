@@ -1,3 +1,4 @@
+import { QuoteForm } from '@/components/QuoteForm'
 import { QuoteOfTheDay } from '@/components/QuoteOfTheDay'
 import { useSession } from '@/auth/useSession'
 import { NotFound } from './NotFound'
@@ -9,5 +10,6 @@ export function Settings() {
   if (!user) return <NotFound /> // logged out: the page does not exist
   return <section aria-label="Settings page" className="-ml-5 flex flex-col gap-4 pl-4 sm:gap-6 sm:pl-6">
       <QuoteOfTheDay />
+      <QuoteForm />
     </section>
 }
