@@ -7,9 +7,10 @@ const fieldClass =
   'w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 // The form to add a quote. The server decides what a good quote is, so the browser sends what was typed. On success
-// both fields clear and the quotes are refetched, so today's quote and the list stay current. A 422 shows the API's
-// own message; anything else shows a generic one.
-export function QuoteForm() {
+// the quotes are refetched, so today's quote and the list stay current, and the form closes. A 422 shows the API's
+// own message and keeps the form open; anything else shows a generic one. Cancel and a successful save both call
+// onClose, and the parent unmounts the form, which clears it.
+export function QuoteForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
   const textId = useId()
   const authorId = useId()
@@ -20,9 +21,8 @@ export function QuoteForm() {
   const add = useMutation({
     mutationFn: createQuote,
     onSuccess: () => {
-      setText('')
-      setAuthor('')
       queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      onClose()
     },
     onError: (e) => {
       const refused = e instanceof ApiError && e.status === 422 && e.serverMessage
@@ -44,6 +44,7 @@ export function QuoteForm() {
         </label>
         <textarea
           id={textId}
+          autoFocus
           rows={3}
           className={fieldClass}
           value={text}
@@ -68,13 +69,20 @@ export function QuoteForm() {
           {error}
         </p>
       )}
-      <div>
+      <div className="flex gap-2">
         <button
           type="submit"
           disabled={add.isPending}
           className="rounded-md border border-border px-3 py-1 text-sm text-foreground disabled:opacity-50"
         >
-          Add quote
+          Save quote
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-border px-3 py-1 text-sm text-foreground disabled:opacity-50"
+        >
+          Cancel
         </button>
       </div>
     </form>
