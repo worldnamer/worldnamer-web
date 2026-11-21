@@ -84,16 +84,15 @@ describe('the Settings page', () => {
     server.use(refreshHandler, ...quotesHandlers())
     renderApp('/settings')
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Add quote' }))
     const text = await screen.findByRole('textbox', { name: 'Quote' })
     const author = screen.getByRole('textbox', { name: 'Author (optional)' })
     fireEvent.change(text, { target: { value: 'Stay hungry' } })
     fireEvent.change(author, { target: { value: 'Jobs' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('Stay hungry')
     expect(await screen.findByRole('listitem')).toHaveTextContent('— Jobs')
-    expect(text).toHaveValue('')
-    expect(author).toHaveValue('')
   })
 
   it("shows the server's 422 message beside the form and keeps the typed text", async () => {
@@ -101,10 +100,11 @@ describe('the Settings page', () => {
     server.use(refreshHandler, ...quotesHandlers())
     renderApp('/settings')
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Add quote' }))
     const text = await screen.findByRole('textbox', { name: 'Quote' })
     const tooLong = 'a'.repeat(501)
     fireEvent.change(text, { target: { value: tooLong } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Text is too long (maximum is 500 characters).',
@@ -136,8 +136,9 @@ describe('the Settings page', () => {
     renderApp('/settings')
 
     expect(await screen.findByText('Add your first quote')).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Quote' }), { target: { value: 'First one' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add quote' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Quote' }), { target: { value: 'First one' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('First one')
     expect(screen.queryByText('Add your first quote')).not.toBeInTheDocument()
@@ -206,5 +207,80 @@ describe('the Settings page', () => {
 
     await waitFor(() => expect(screen.getByRole('blockquote')).toHaveTextContent('Second one'))
     expect(screen.getByRole('blockquote')).not.toHaveTextContent('First one')
+  })
+
+  it('opens the quote form below the list from the plus button and focuses it', async () => {
+    setSessionFlag()
+    server.use(
+      refreshHandler,
+      ...quotesHandlers([
+        { id: 1, text: 'First one', author: 'Ann' },
+        { id: 2, text: 'Second one' },
+      ]),
+    )
+    renderApp('/settings')
+
+    await screen.findAllByRole('listitem')
+    expect(screen.queryByRole('textbox', { name: 'Quote' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+
+    const textbox = await screen.findByRole('textbox', { name: 'Quote' })
+    expect(textbox).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Add quote' })).toBeDisabled()
+    const list = screen.getByRole('list')
+    expect(list.compareDocumentPosition(textbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('closes and clears the form when Cancel is pressed', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...quotesHandlers())
+    renderApp('/settings')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add quote' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Quote' }), { target: { value: 'Draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('textbox', { name: 'Quote' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add quote' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    expect(await screen.findByRole('textbox', { name: 'Quote' })).toHaveValue('')
+  })
+
+  it('closes the form after a quote is saved and keeps it open on a 422', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...quotesHandlers())
+    renderApp('/settings')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add quote' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Quote' }), { target: { value: 'Stay hungry' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
+
+    expect(await screen.findByRole('blockquote')).toHaveTextContent('Stay hungry')
+    expect(screen.queryByRole('textbox', { name: 'Quote' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    const text = await screen.findByRole('textbox', { name: 'Quote' })
+    const tooLong = 'a'.repeat(501)
+    fireEvent.change(text, { target: { value: tooLong } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Text is too long (maximum is 500 characters).')
+    expect(screen.getByRole('textbox', { name: 'Quote' })).toHaveValue(tooLong)
+  })
+
+  it('adds a quote from the form when there are no quotes yet', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...quotesHandlers())
+    renderApp('/settings')
+
+    expect(await screen.findByText('Add your first quote')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Quote' }), { target: { value: 'First one' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save quote' }))
+
+    expect(await screen.findByRole('blockquote')).toHaveTextContent('First one')
+    expect(screen.queryByRole('textbox', { name: 'Quote' })).toBeNull()
   })
 })
