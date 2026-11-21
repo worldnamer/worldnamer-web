@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import {
   deleteHabit,
@@ -10,6 +10,7 @@ import {
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { todayClass } from '@/lib/todayHighlight'
+import { revealOnHover } from '@/lib/revealOnHover'
 import { cn } from '@/lib/utils'
 import {
   addWeeks,
@@ -152,7 +153,7 @@ export function Habits() {
             </thead>
             <tbody>
               {data.map((habit) => (
-                <tr key={habit.id}>
+                <tr key={habit.id} className="group">
                   <th scope="row" className="py-1 text-left font-normal">
                     {habit.name}
                   </th>
@@ -172,13 +173,13 @@ export function Habits() {
                   <td className="py-1 text-right">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
+                      size="icon-sm"
+                      className={cn('text-muted-foreground hover:text-foreground', revealOnHover)}
                       aria-label={`Delete ${habit.name}`}
                       disabled={deletingIds.includes(habit.id)}
                       onClick={(event) => del.ask(habit, event.currentTarget)}
                     >
-                      Delete
+                      <Trash2Icon />
                     </Button>
                   </td>
                 </tr>

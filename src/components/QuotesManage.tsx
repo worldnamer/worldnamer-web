@@ -1,9 +1,12 @@
+import { Trash2Icon } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteQuote, listQuotes, type Quote } from '@/api/quotes'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
+import { revealOnHover } from '@/lib/revealOnHover'
 import { useConfirmDelete } from '@/lib/useConfirmDelete'
+import { cn } from '@/lib/utils'
 
 // Lists every saved quote in the order the API gives them, behind a Manage button so the list stays out of the way
 // until it is wanted. Each quote can be deleted after a confirmation. Renders nothing when there are no quotes.
@@ -33,19 +36,19 @@ export function QuotesManage() {
       {open && (
         <ul className="flex flex-col gap-2">
           {quotes.map((quote) => (
-            <li key={quote.id} className="flex items-center justify-between gap-3">
+            <li key={quote.id} className="group flex items-center justify-between gap-3">
               <span>
                 {quote.text}
                 {quote.author && <span className="text-muted-foreground"> — {quote.author}</span>}
               </span>
               <Button
                 variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
+                size="icon-sm"
+                className={cn('text-muted-foreground hover:text-foreground', revealOnHover)}
                 aria-label={`Delete quote: ${quote.text}`}
                 onClick={(event) => del.ask(quote, event.currentTarget)}
               >
-                Delete
+                <Trash2Icon />
               </Button>
             </li>
           ))}
