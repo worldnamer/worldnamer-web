@@ -343,6 +343,14 @@ describe('deleting a habit', () => {
     { id: 2, name: 'Stretch' },
   ]
 
+  it('shows the delete button as an icon with no visible Delete text', async () => {
+    server.use(...habitsHandlers(stretch))
+    renderHabits()
+
+    const button = await screen.findByRole('button', { name: 'Delete Stretch' })
+    expect(button).not.toHaveTextContent('Delete')
+  })
+
   async function openDialog(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByRole('button', { name: 'Delete Stretch' }))
     return screen.findByRole('alertdialog', { name: "Delete 'Stretch'?" })

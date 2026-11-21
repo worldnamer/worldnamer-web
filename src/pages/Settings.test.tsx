@@ -149,6 +149,15 @@ describe('the Settings page', () => {
     expect(screen.queryByText('Add your first quote')).not.toBeInTheDocument()
   })
 
+  it('shows the quote delete button as an icon with no visible Delete text', async () => {
+    setSessionFlag()
+    server.use(refreshHandler, ...quotesHandlers([{ id: 1, text: 'First one', author: 'Ann' }]))
+    renderApp('/settings')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
+    expect(screen.getByRole('button', { name: 'Delete quote: First one' })).not.toHaveTextContent('Delete')
+  })
+
   it('asks to confirm before deleting a quote and keeps it when cancelled', async () => {
     setSessionFlag()
     server.use(refreshHandler, ...quotesHandlers([{ id: 1, text: 'First one', author: 'Ann' }]))
