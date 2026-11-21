@@ -18,10 +18,10 @@ export function Settings() {
               Quotes
             </h2>
           </div>
-          <div className="grid gap-4 border-b border-border py-3">
+          <div className="grid gap-6 border-b border-border py-3">
             <QuoteOfTheDay />
             <QuoteForm />
-            <QuotesManage />
+            <QuotesManage focusAfterDelete={() => null} />
           </div>
         </section>
       </div>

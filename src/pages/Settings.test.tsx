@@ -50,7 +50,7 @@ describe('the Settings page', () => {
     renderApp('/settings')
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('Hi there')
-    expect(screen.getByText('— Ann')).toBeInTheDocument()
+    expect(screen.getByRole('listitem')).toHaveTextContent('— Ann')
   })
 
   it('shows only the quote text when it has no author', async () => {
@@ -91,7 +91,7 @@ describe('the Settings page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add quote' }))
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('Stay hungry')
-    expect(screen.getByText('— Jobs')).toBeInTheDocument()
+    expect(await screen.findByRole('listitem')).toHaveTextContent('— Jobs')
     expect(text).toHaveValue('')
     expect(author).toHaveValue('')
   })
@@ -112,7 +112,7 @@ describe('the Settings page', () => {
     expect(text).toHaveValue(tooLong)
   })
 
-  it('lists the quotes oldest first under a Manage button', async () => {
+  it('lists every quote oldest first with no Manage button', async () => {
     setSessionFlag()
     server.use(
       refreshHandler,
@@ -123,14 +123,8 @@ describe('the Settings page', () => {
     )
     renderApp('/settings')
 
-    const manage = await screen.findByRole('button', { name: 'Manage' })
-    expect(manage).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('list')).not.toBeInTheDocument()
-
-    fireEvent.click(manage)
-
-    expect(manage).toHaveAttribute('aria-expanded', 'true')
-    const items = screen.getAllByRole('listitem')
+    const items = await screen.findAllByRole('listitem')
+    expect(screen.queryByRole('button', { name: 'Manage' })).toBeNull()
     expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent('First one')
     expect(items[1]).toHaveTextContent('Second one')
@@ -154,8 +148,7 @@ describe('the Settings page', () => {
     server.use(refreshHandler, ...quotesHandlers([{ id: 1, text: 'First one', author: 'Ann' }]))
     renderApp('/settings')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
-    expect(screen.getByRole('button', { name: 'Delete quote: First one' })).not.toHaveTextContent('Delete')
+    expect(await screen.findByRole('button', { name: 'Delete quote: First one' })).not.toHaveTextContent('Delete')
   })
 
   it('asks to confirm before deleting a quote and keeps it when cancelled', async () => {
@@ -163,8 +156,7 @@ describe('the Settings page', () => {
     server.use(refreshHandler, ...quotesHandlers([{ id: 1, text: 'First one', author: 'Ann' }]))
     renderApp('/settings')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
-    const deleteButton = screen.getByRole('button', { name: 'Delete quote: First one' })
+    const deleteButton = await screen.findByRole('button', { name: 'Delete quote: First one' })
     fireEvent.click(deleteButton)
 
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
@@ -186,8 +178,7 @@ describe('the Settings page', () => {
     )
     renderApp('/settings')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete quote: First one' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete quote: First one' }))
 
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -208,8 +199,7 @@ describe('the Settings page', () => {
     renderApp('/settings')
 
     expect(await screen.findByRole('blockquote')).toHaveTextContent('First one')
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete quote: First one' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete quote: First one' }))
 
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('Delete this quote?')
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
