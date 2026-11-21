@@ -47,6 +47,12 @@ describe('navigation', () => {
 
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
   })
+
+  it('links back to the main page from the not-found page', () => {
+    renderApp('/nope')
+
+    expect(screen.getByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/')
+  })
 })
 
 describe('resume cards', () => {
