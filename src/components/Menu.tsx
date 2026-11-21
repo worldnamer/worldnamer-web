@@ -1,5 +1,5 @@
 import { MenuIcon } from 'lucide-react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { logout } from '@/api/session'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +15,14 @@ import { sections } from '@/lib/sections'
 // The hamburger button for a logged-in user. The sections come first as links, then a separator, then the username
 // as a plain label (not a menu item) and "Log out".
 export function Menu({ username }: { username: string }) {
+  const navigate = useNavigate()
+
+  // Log out, then go to the main page, so no private page is left on screen after the session is gone.
+  async function logOutAndGoHome() {
+    await logout()
+    void navigate('/')
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -33,7 +41,7 @@ export function Menu({ username }: { username: string }) {
         <DropdownMenuItem asChild>
           <Link to="/settings">Settings</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void logout()}>Log out</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void logOutAndGoHome()}>Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
