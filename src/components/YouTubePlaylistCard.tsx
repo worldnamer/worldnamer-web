@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLinkIcon, Trash2Icon } from 'lucide-react'
+import { ExternalLinkIcon, RotateCcwIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { ApiError } from '@/api/client'
@@ -13,6 +13,7 @@ import {
   type YouTubeItemsResponse,
   type YouTubeVideo,
 } from '@/api/youtubeConnection'
+import { requeueYouTubeVideo } from '@/api/youtubeVideos'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { Button } from '@/components/ui/button'
 import { navigateTo } from '@/lib/externalNavigation'
@@ -170,6 +171,22 @@ export function YouTubePlaylistCard({
     },
   })
 
+  // A finished row has a Requeue button that sends its video back to waiting at once, with no confirmation. The recorded
+  // videos are read again afterwards so the row shows its new state.
+  const [requeueFailed, setRequeueFailed] = useState<string | null>(null)
+  const requeue = useMutation({
+    mutationFn: (video: YouTubeVideo) => requeueYouTubeVideo(video.video_id!),
+    onMutate: () => setRequeueFailed(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['youtube_videos'] })
+      // The pressed button leaves the list once its row is waiting, so focus goes to the card's heading.
+      headingRef.current?.focus()
+    },
+    onError: (_error, video) => {
+      setRequeueFailed(video.title)
+    },
+  })
+
   return (
     <section aria-labelledby="youtube-heading" className="w-full">
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
@@ -268,6 +285,17 @@ export function YouTubePlaylistCard({
                   )}
                 </span>
                 <span className="relative flex shrink-0 items-center">
+                  {dot?.clickable && video_id !== null && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={cn('text-muted-foreground hover:text-foreground', revealOnHover)}
+                      aria-label={`Requeue ${title}`}
+                      onClick={() => requeue.mutate(video)}
+                    >
+                      <RotateCcwIcon />
+                    </Button>
+                  )}
                   {video_id !== null && (
                     <Button variant="ghost" size="icon-sm" className={cn('text-muted-foreground hover:text-foreground', revealOnHover)} asChild>
                       <a
@@ -298,6 +326,11 @@ export function YouTubePlaylistCard({
         {removeFailed !== null && (
           <p role="alert" className="text-destructive">
             Couldn't remove {removeFailed}. Try again.
+          </p>
+        )}
+        {requeueFailed !== null && (
+          <p role="alert" className="text-destructive">
+            Couldn't requeue {requeueFailed}. Try again.
           </p>
         )}
         {itemsQuery.data?.videos && itemsQuery.data.videos.total_count > itemsQuery.data.videos.items.length && (

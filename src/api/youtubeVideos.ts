@@ -31,3 +31,13 @@ export async function getYouTubeVideos(): Promise<YouTubeTranscriptVideo[]> {
   const body = (await response.json()) as { videos: YouTubeTranscriptVideo[] }
   return body.videos
 }
+
+// POST /youtube_connection/videos/:youtube_id/requeue sends one recorded video back to waiting so it is transcribed
+// again. Answers 202 when it was requeued and 200 when there was nothing to do; both carry no body. Rejects with
+// ApiError otherwise: 404 for an unknown video, 429 when there were too many requests.
+export async function requeueYouTubeVideo(youtubeId: string): Promise<void> {
+  const response = await apiFetch(`/youtube_connection/videos/${encodeURIComponent(youtubeId)}/requeue`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await apiErrorFrom(response)
+}
