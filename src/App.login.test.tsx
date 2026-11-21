@@ -363,6 +363,17 @@ describe('log out', () => {
     expect(hasSessionFlag()).toBe(false)
   })
 
+  it.each(['/settings', '/recipes'])('lands on the main page after logging out from %s', async (route) => {
+    setSessionFlag()
+    server.use(refreshHandler, logoutHandler, ...habitsHandlers(), ...googleCalendarHandlers(), ...taskListsHandlers(), ...tasksHandlers())
+    renderApp(route)
+
+    await openMenuAndLogOut()
+
+    expect(await screen.findByRole('button', { name: 'Login' })).toBeInTheDocument()
+    expect(dossier()).toBeInTheDocument()
+  })
+
   it.each([
     ['a server error', () => new HttpResponse(null, { status: 500 })],
     ['a network error', () => HttpResponse.error()],
