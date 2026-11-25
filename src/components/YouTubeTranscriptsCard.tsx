@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import Markdown from 'react-markdown'
 import type { YouTubeTranscriptVideo } from '@/api/youtubeVideos'
 import { useYouTubeVideos } from '@/lib/useYouTubeVideos'
 import { youtubeDot } from '@/lib/youtubeDot'
@@ -36,8 +37,8 @@ const summaryReasonSentences: Record<string, string> = {
   unknown: 'Something went wrong.',
 }
 
-// What a final video has to say: its summary, or in plain words why there is none. Only text is returned, never markup,
-// because the summary is untrusted model output and React renders it as a text node. Null when there is nothing to say.
+// What a final video has to say: its summary, or in plain words why there is none. A summary comes back as markdown
+// source, which the card renders with a short list of allowed elements. Null when there is nothing to say.
 function detailText(video: YouTubeTranscriptVideo): string | null {
   switch (video.state) {
     case 'no_captions':
@@ -68,6 +69,7 @@ export function YouTubeTranscriptsCard({ videoId }: { videoId: string | null }) 
   // Only a final video is shown; the playlist card does not let anything else be selected.
   const video = videoId === null ? undefined : data?.find((recorded) => recorded.youtube_id === videoId)
   const shown = video && youtubeDot(video).clickable ? video : undefined
+  const summaryMarkdown = shown?.state === 'done' && shown.summary?.state === 'done' ? shown.summary.text : null
 
   // On a narrow screen the card sits below the list, so a new selection brings it into view. jsdom has no
   // scrollIntoView, hence the guard.
@@ -88,8 +90,22 @@ export function YouTubeTranscriptsCard({ videoId }: { videoId: string | null }) 
         {data && !shown && <p className="text-muted-foreground">Select a video to read its summary.</p>}
         {shown && (
           <article className="grid gap-2">
-            {detailText(shown) !== null && (
-              <p className="whitespace-pre-line break-words text-sm">{detailText(shown)}</p>
+            {summaryMarkdown ? (
+              <div className="grid gap-2 break-words text-sm [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5">
+                <Markdown
+                  allowedElements={['p', 'ul', 'ol', 'li', 'strong', 'em']}
+                  unwrapDisallowed
+                  components={{
+                    p: ({ children }) => <p className="whitespace-pre-line">{children}</p>,
+                  }}
+                >
+                  {summaryMarkdown}
+                </Markdown>
+              </div>
+            ) : (
+              detailText(shown) !== null && (
+                <p className="whitespace-pre-line break-words text-sm">{detailText(shown)}</p>
+              )
             )}
           </article>
         )}

@@ -112,13 +112,48 @@ describe('the transcripts card', () => {
     expect(container.querySelector('b')).toBeNull()
   })
 
-  it('keeps paragraph breaks by styling, not markup', async () => {
+  it("renders a summary's paragraphs as separate paragraphs", async () => {
     server.use(...youtubeVideosHandlers([video({ summary: { state: 'done', text: 'One.\n\nTwo.' } })]))
     renderCard()
 
-    const text = await screen.findByText(/One\./)
-    expect(text).toHaveClass('whitespace-pre-line')
-    expect(text.querySelector('br')).toBeNull()
+    const one = await screen.findByText('One.')
+    const two = screen.getByText('Two.')
+    expect(one.tagName).toBe('P')
+    expect(two.tagName).toBe('P')
+    expect(one).not.toBe(two)
+  })
+
+  it("renders a summary's bulleted list and bold labels as elements", async () => {
+    server.use(
+      ...youtubeVideosHandlers([
+        video({ summary: { state: 'done', text: 'Intro.\n\n- **Label one** — first detail\n- **Label two** — second detail' } }),
+      ]),
+    )
+    const { container } = renderCard()
+
+    await screen.findByText('Intro.')
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect([...container.querySelectorAll('strong')].map((s) => s.textContent)).toEqual(['Label one', 'Label two'])
+  })
+
+  it('does not render links, images or headings from a summary', async () => {
+    server.use(
+      ...youtubeVideosHandlers([
+        video({
+          summary: {
+            state: 'done',
+            text: '# Big title\n\nSee [this site](https://evil.example) and ![pixel](https://evil.example/t.png) now.',
+          },
+        }),
+      ]),
+    )
+    const { container } = renderCard()
+
+    await screen.findByText(/this site/)
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('h1')).toBeNull()
+    expect(screen.getByText(/Big title/)).toBeInTheDocument()
   })
 
   it('still shows the loading and error lines', async () => {
