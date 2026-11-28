@@ -203,8 +203,9 @@ export function TaskItem({
   const overdue = !!task.due_on && !task.done && task.due_on < today
 
   return (
-    // `group` lets the row's icons reveal themselves while the row is hovered or holds focus.
-    <li className="group flex items-start gap-2">
+    // `group` lets the row's icons reveal themselves while the row is hovered or holds focus. The text is muted until the
+    // row is hovered, like the recipe and video rows.
+    <li className="group flex items-start gap-2 text-muted-foreground transition-colors hover:text-foreground">
       <input
         type="checkbox"
         aria-label={taskName(task.text)}

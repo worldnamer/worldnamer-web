@@ -154,7 +154,11 @@ export function Habits() {
             <tbody>
               {data.map((habit) => (
                 <tr key={habit.id} className="group">
-                  <th scope="row" className="py-1 text-left font-normal">
+                  <th
+                    scope="row"
+                    // Muted until the row is hovered, like the recipe and video rows; the day cells keep their own colours.
+                    className="py-1 text-left font-normal text-muted-foreground transition-colors group-hover:text-foreground"
+                  >
                     {habit.name}
                   </th>
                   {days.map((day) => (
