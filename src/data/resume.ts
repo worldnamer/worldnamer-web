@@ -34,6 +34,8 @@ export type TimelineEvent =
       concepts?: string[]
     }
 
+export type Role = Extract<TimelineEvent, { kind: 'role' }>
+
 export const resume = {
   name: 'John LeBoeuf-Little',
   headline: 'Senior Software Engineer / Engineering Manager / SRE',
