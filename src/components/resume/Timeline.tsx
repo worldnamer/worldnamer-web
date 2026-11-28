@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { TimelineEvent } from '@/data/resume'
+import type { Role, TimelineEvent } from '@/data/resume'
 import { assignSides } from '@/lib/timeline'
 import { EducationCard } from './EducationCard'
 import { MilestoneNote } from './MilestoneNote'
@@ -18,8 +18,6 @@ function eventKey(event: TimelineEvent): string {
       return `role-${event.employer}-${event.title}`
   }
 }
-
-type Role = Extract<TimelineEvent, { kind: 'role' }>
 
 // The timeline view of the résumé data: a wire with events on it, newest first.
 export function Timeline({ events }: { events: TimelineEvent[] }) {

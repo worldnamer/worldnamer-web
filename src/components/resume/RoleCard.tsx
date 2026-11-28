@@ -1,12 +1,10 @@
 import { useId } from 'react'
-import type { Side, TimelineEvent } from '@/data/resume'
+import type { Role, Side } from '@/data/resume'
 import { formatPeriod } from '@/lib/dates'
 import { useHoverIntent } from '@/lib/useHoverIntent'
 import { cn } from '@/lib/utils'
 import { Chip } from './Chip'
 import { TimelineItem } from './TimelineItem'
-
-type Role = Extract<TimelineEvent, { kind: 'role' }>
 
 // How long the mouse has to rest on a folded card before it opens by itself.
 const HOVER_OPEN_MS = 500
